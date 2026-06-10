@@ -12,6 +12,7 @@ import type { AIInsightsData } from "../components/AIInsights";
 export function NPlus1Trends() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
+  const [scatterMaximized, setScatterMaximized] = useState(false);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
@@ -27,7 +28,7 @@ export function NPlus1Trends() {
 | filter db.system != "null" and aggregation.count > 1
 | fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
 | sort end_time asc
-| limit 1000`;
+| limit 5000`;
 
   // Estimated annual projection (weekly * 52)
   const annualQuery = `fetch spans, from: now()-7d
@@ -127,46 +128,89 @@ export function NPlus1Trends() {
       </div>
 
       {/* Scatter plot */}
-      <div className="pp-chart-card" style={{ marginBottom: 20 }}>
-        <div className="pp-chart-title">N+1 Spans Over Time (Scatter)</div>
+      <div className="pp-chart-card" style={{ marginBottom: 20, ...(scatterMaximized ? { position: "fixed", inset: 0, zIndex: 9999, margin: 0, borderRadius: 0, overflow: "auto" } : {}) }}>
+        <Flex justifyContent="space-between" alignItems="center">
+          <div className="pp-chart-title">N+1 Spans Over Time (Scatter)</div>
+          <button
+            onClick={() => setScatterMaximized(v => !v)}
+            style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "inherit" }}
+          >
+            {scatterMaximized ? "⊟ Minimize" : "⊞ Maximize"}
+          </button>
+        </Flex>
         {scatterResult.isLoading ? (
           <div className="pp-loading"><ProgressBar style={{ width: 200 }} /></div>
         ) : scatterData.length === 0 ? (
           <Text style={{ opacity: 0.5, padding: 20 }}>No N+1 patterns detected in this timeframe</Text>
         ) : (
-          <div style={{ position: "relative", height: 220, padding: "8px 0" }}>
-            <svg width="100%" height="200" viewBox="0 0 800 200" preserveAspectRatio="none">
-              {/* Y-axis label */}
-              <text x="10" y="15" fontSize="10" fill="rgba(128,128,128,0.6)">Queries</text>
-              <text x="10" y="195" fontSize="10" fill="rgba(128,128,128,0.6)">0</text>
-              {/* Grid lines */}
-              <line x1="40" y1="20" x2="790" y2="20" stroke="rgba(128,128,128,0.1)" />
-              <line x1="40" y1="60" x2="790" y2="60" stroke="rgba(128,128,128,0.1)" />
-              <line x1="40" y1="100" x2="790" y2="100" stroke="rgba(128,128,128,0.1)" />
-              <line x1="40" y1="140" x2="790" y2="140" stroke="rgba(128,128,128,0.1)" />
-              <line x1="40" y1="180" x2="790" y2="180" stroke="rgba(128,128,128,0.1)" />
-              {/* Dots */}
-              {(() => {
-                const minTime = Math.min(...scatterData.map(d => d.time));
-                const maxTime = Math.max(...scatterData.map(d => d.time));
-                const timeRange = maxTime - minTime || 1;
-                return scatterData.map((d, i) => {
-                  const x = 40 + ((d.time - minTime) / timeRange) * 750;
-                  const y = 180 - (d.count / maxScatterCount) * 160;
-                  const r = Math.min(2 + (d.count / maxScatterCount) * 4, 6);
-                  const color = d.count > 100 ? "#C21930" : d.count > 50 ? "#FF832B" : d.count > 20 ? "#4589FF" : "#7cc7ff";
-                  return <circle key={i} cx={x} cy={y} r={r} fill={color} opacity={0.7} />;
-                });
-              })()}
-            </svg>
-            <Flex justifyContent="space-between" style={{ fontSize: 10, opacity: 0.4, padding: "0 40px" }}>
-              <span>Oldest</span>
-              <span>Most Recent</span>
-            </Flex>
-          </div>
+          (() => {
+            const chartH = scatterMaximized ? 600 : 350;
+            const padL = 50, padR = 10, padT = 20, padB = 40;
+            const plotW = 800 - padL - padR;
+            const plotH = chartH - padT - padB;
+            const minTime = Math.min(...scatterData.map(d => d.time));
+            const maxTime = Math.max(...scatterData.map(d => d.time));
+            const timeRange = maxTime - minTime || 1;
+            // Y-axis ticks
+            const yMax = maxScatterCount;
+            const yStep = Math.ceil(yMax / 8 / 50) * 50 || 50;
+            const yTicks: number[] = [];
+            for (let v = 0; v <= yMax; v += yStep) yTicks.push(v);
+            if (yTicks[yTicks.length - 1] < yMax) yTicks.push(yMax);
+            // X-axis date ticks
+            const xTickCount = scatterMaximized ? 14 : 7;
+            const xTicks: { time: number; label: string }[] = [];
+            for (let i = 0; i <= xTickCount; i++) {
+              const t = minTime + (timeRange * i) / xTickCount;
+              const d = new Date(t);
+              const label = `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${d.getHours() === 0 ? "" : d.getHours() + ":00"}`.trim();
+              xTicks.push({ time: t, label });
+            }
+            // Service colors
+            const serviceColors: Record<string, string> = {};
+            const palette = ["#4589FF","#C21930","#FF832B","#24A148","#A56EFF","#FF7EB6","#D2A106","#08BDBA","#BA4E00","#EE5396","#009D9A","#6929C4","#1192E8","#FA4D56","#570408","#002D9C"];
+            const services = [...new Set(scatterData.map(d => d.service))];
+            services.forEach((s, i) => { serviceColors[s] = palette[i % palette.length]; });
+
+            return (
+              <div style={{ position: "relative", height: chartH + 10, padding: "8px 0" }}>
+                <svg width="100%" height={chartH} viewBox={`0 0 800 ${chartH}`} preserveAspectRatio="xMidYMid meet">
+                  {/* Y-axis grid + labels */}
+                  {yTicks.map(v => {
+                    const y = padT + plotH - (v / yMax) * plotH;
+                    return (
+                      <g key={`y-${v}`}>
+                        <line x1={padL} y1={y} x2={padL + plotW} y2={y} stroke="rgba(128,128,128,0.15)" />
+                        <text x={padL - 5} y={y + 4} fontSize="9" fill="rgba(128,128,128,0.6)" textAnchor="end">{v}</text>
+                      </g>
+                    );
+                  })}
+                  {/* Y-axis title */}
+                  <text x="12" y={chartH / 2} fontSize="10" fill="rgba(128,128,128,0.5)" textAnchor="middle" transform={`rotate(-90, 12, ${chartH / 2})`}>N+1 Queries</text>
+                  {/* X-axis date labels */}
+                  {xTicks.map((tick, i) => {
+                    const x = padL + ((tick.time - minTime) / timeRange) * plotW;
+                    return (
+                      <g key={`x-${i}`}>
+                        <line x1={x} y1={padT} x2={x} y2={padT + plotH} stroke="rgba(128,128,128,0.08)" />
+                        <text x={x} y={padT + plotH + 14} fontSize="9" fill="rgba(128,128,128,0.6)" textAnchor="middle">{tick.label}</text>
+                      </g>
+                    );
+                  })}
+                  {/* Dots colored by service */}
+                  {scatterData.map((d, i) => {
+                    const x = padL + ((d.time - minTime) / timeRange) * plotW;
+                    const y = padT + plotH - (d.count / yMax) * plotH;
+                    const r = Math.min(2 + (d.count / yMax) * 3, 5);
+                    return <circle key={i} cx={x} cy={y} r={r} fill={serviceColors[d.service] || "#4589FF"} opacity={0.7} />;
+                  })}
+                </svg>
+              </div>
+            );
+          })()
         )}
         <Text style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
-          Each dot = one N+1 span. Size/color = query count (🔴 &gt;100, 🟠 &gt;50, 🔵 &lt;50). Clusters indicate systematic issues.
+          Each dot = one N+1 span. Color = service. Y-axis = query count. {scatterData.length.toLocaleString()} spans shown.
         </Text>
       </div>
 
