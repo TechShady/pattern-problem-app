@@ -16,12 +16,12 @@ export function SlowConsumers() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
   // Detect slow consumers: spans with disproportionately long duration compared to siblings
   // High duration variance within the same trace indicates consumer bottlenecks
-  const slowConsumerQuery = `fetch spans, timeframe: { ${tf} }
-| filter isNotNull(dt.entity.service) and kind == "SERVER"
+  const slowConsumerQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | summarize avg_duration_ms = avg(duration_ms),
@@ -36,8 +36,8 @@ export function SlowConsumers() {
 | limit 50`;
 
   // Long-tail spans (individual slow executions)
-  const longTailQuery = `fetch spans, timeframe: { ${tf} }
-| filter isNotNull(dt.entity.service) and kind == "SERVER"
+  const longTailQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | filter duration_ms > 5000

@@ -16,27 +16,25 @@ export function ChattyAPIs() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
-  // Chatty APIs: parent spans with many child calls to downstream services
-  // We look for spans that have high fan-out (many child spans to other services)
-  const chattyQuery = `fetch spans, timeframe: { ${tf} }
-| filter isNotNull(dt.entity.service) and kind == "CLIENT"
+  // Chatty APIs: services with high fan-out per trace (many spans in a single trace)
+  const chattyQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
 | fieldsAdd caller_service = entityName(dt.entity.service),
-            parent_span = toString(parent_span.id)
+            trace_id = toString(trace.id)
 | summarize call_count = count(),
             distinct_targets = countDistinctExact(span.name),
-            by: { caller_service, parent_span }
-| filter call_count > 5
+            by: { caller_service, trace_id }
+| filter call_count > 20
 | sort call_count desc
 | limit 100`;
 
   // Service-level chatty summary
-  const chattySummaryQuery = `fetch spans, timeframe: { ${tf} }
-| filter isNotNull(dt.entity.service) and kind == "CLIENT"
+  const chattySummaryQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
 | fieldsAdd caller_service = entityName(dt.entity.service)
 | summarize total_calls = count(),
-            avg_fan_out = avg(toDouble(aggregation.count)),
             by: { caller_service }
 | filter total_calls > 50
 | sort total_calls desc
@@ -49,7 +47,7 @@ export function ChattyAPIs() {
     if (!chattyResult.data?.records) return [];
     return chattyResult.data.records.map((r: any) => ({
       callerService: String(r.caller_service ?? "Unknown"),
-      parentSpan: String(r.parent_span ?? ""),
+      traceId: String(r.trace_id ?? ""),
       callCount: Number(r.call_count ?? 0),
       distinctTargets: Number(r.distinct_targets ?? 0),
     }));
@@ -79,8 +77,8 @@ export function ChattyAPIs() {
       ),
     },
     { id: "callerService", header: "Caller Service", accessor: "callerService", width: 250 },
-    { id: "distinctTargets", header: "Distinct Targets", accessor: "distinctTargets", width: 120 },
-    { id: "parentSpan", header: "Parent Span ID", accessor: "parentSpan", width: 250 },
+    { id: "distinctTargets", header: "Distinct Endpoints", accessor: "distinctTargets", width: 120 },
+    { id: "traceId", header: "Trace ID", accessor: "traceId", width: 250 },
   ], []);
 
   const analyzeChat = useCallback((): AIInsightsData => {

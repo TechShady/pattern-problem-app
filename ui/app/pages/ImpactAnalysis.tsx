@@ -15,10 +15,10 @@ export function ImpactAnalysis() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
   // N+1 impact metrics
-  const nPlus1ImpactQuery = `fetch spans, timeframe: { ${tf} }
+  const nPlus1ImpactQuery = `fetch spans, ${tf}
 | filter db.system != "null"
 | summarize total_queries = sum(aggregation.count),
             n1_queries = sum(if(aggregation.count > 1, aggregation.count)),
@@ -28,7 +28,7 @@ export function ImpactAnalysis() {
             reduction_pct = ((toDouble(n1_queries) - toDouble(n1_spans)) / toDouble(total_queries)) * 100`;
 
   // Service-level impact
-  const serviceImpactQuery = `fetch spans, timeframe: { ${tf} }
+  const serviceImpactQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | fieldsAdd service_name = entityName(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0

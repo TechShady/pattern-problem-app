@@ -15,22 +15,22 @@ export function NPlus1Trends() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
   // Timeseries: N+1 query count over time
-  const timeseriesQuery = `fetch spans, timeframe: { ${tf} }
+  const timeseriesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | makeTimeseries \`N+1 Query Count\` = sum(aggregation.count), interval: auto`;
 
   // Scatter: high-count spans plotted over time
-  const scatterQuery = `fetch spans, timeframe: { ${tf} }
+  const scatterQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 10
 | fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
 | sort aggregation.count desc
 | limit 500`;
 
   // Estimated annual projection (weekly * 52)
-  const annualQuery = `fetch spans, timeframe: { from: "now()-7d", to: "now()" }
+  const annualQuery = `fetch spans, from: now()-7d
 | filter db.system != "null"
 | summarize c=count(), s= sum(aggregation.count),
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))

@@ -15,31 +15,31 @@ export function PatternOverview() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
   // N+1 Spans count
-  const nPlus1SpansQuery = `fetch spans, timeframe: { ${tf} }
+  const nPlus1SpansQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | summarize total_spans = count()`;
 
   // Total DB queries
-  const totalQueriesQuery = `fetch spans, timeframe: { ${tf} }
+  const totalQueriesQuery = `fetch spans, ${tf}
 | filter db.system != "null"
 | summarize s = sum(aggregation.count)`;
 
   // Average queries per N+1 span
-  const avgQueriesQuery = `fetch spans, timeframe: { ${tf} }
+  const avgQueriesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | summarize total_aggregation_count = sum(aggregation.count), total_spans = count()
 | fieldsAdd average_count = total_aggregation_count / total_spans`;
 
   // Max queries per N+1 span
-  const maxQueriesQuery = `fetch spans, timeframe: { ${tf} }
+  const maxQueriesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | summarize total_aggregation_count = max(aggregation.count)`;
 
   // Query reduction potential
-  const reductionQuery = `fetch spans, timeframe: { ${tf} }
+  const reductionQuery = `fetch spans, ${tf}
 | filter db.system != "null"
 | summarize c=count(), s= sum(aggregation.count),
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
@@ -47,7 +47,7 @@ export function PatternOverview() {
             reducibleQueries = (toDouble(s1)-toDouble(c1))`;
 
   // N+1 services distribution
-  const servicesQuery = `fetch spans, timeframe: { ${tf} }
+  const servicesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | fields aggregation.count, service_name = entityName(dt.entity.service)
 | summarize count=sum(aggregation.count), by:{service_name}
@@ -55,7 +55,7 @@ export function PatternOverview() {
 | limit 10`;
 
   // N+1 databases distribution
-  const databasesQuery = `fetch spans, timeframe: { ${tf} }
+  const databasesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | fields db.system, aggregation.count
 | summarize count=sum(aggregation.count), by:{db.system}

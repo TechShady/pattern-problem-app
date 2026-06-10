@@ -20,9 +20,9 @@ export function NPlus1Details() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
-  const topSpansQuery = `fetch spans, timeframe: { ${tf} }
+  const topSpansQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 10
 | fieldsAdd trace_id = toString(trace.id), span_id = toString(span.id)
 | fields \`N+1 Count\` = aggregation.count,

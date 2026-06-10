@@ -1,0 +1,7 @@
+fetch spans, from: now()-2h
+| filter isNotNull(dt.entity.service)
+| fieldsAdd caller_service = entityName(dt.entity.service)
+| summarize total_calls = count(), by: { caller_service }
+| filter total_calls > 50
+| sort total_calls desc
+| limit 10

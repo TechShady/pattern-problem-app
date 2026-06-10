@@ -1,0 +1,3 @@
+﻿fetch spans, timeframe: { from: "now()-2h", to: "now()" }
+| filter db.system != "null" and aggregation.count > 1
+| summarize total_spans = count()

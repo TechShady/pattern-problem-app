@@ -16,11 +16,11 @@ export function CircularDependencies() {
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
-  const tf = `from: "${timeframe.from}", to: "${timeframe.to}"`;
+  const tf = `from: ${timeframe.from}`;
 
   // Detect circular dependencies: traces where a service appears more than once
   // This indicates Service A -> B -> A or A -> B -> C -> A patterns
-  const circularQuery = `fetch spans, timeframe: { ${tf} }
+  const circularQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
             trace_id_str = toString(trace.id)
@@ -35,8 +35,8 @@ export function CircularDependencies() {
 | limit 50`;
 
   // Service call pairs (A->B where B also calls A)
-  const callPairsQuery = `fetch spans, timeframe: { ${tf} }
-| filter isNotNull(dt.entity.service) and kind == "CLIENT"
+  const callPairsQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
 | fieldsAdd caller = entityName(dt.entity.service),
             callee = span.name
 | summarize call_count = count(), by: { caller, callee }
