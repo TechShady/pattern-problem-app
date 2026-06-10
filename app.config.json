@@ -3,7 +3,7 @@
   "environmentUrl": "https://guu84124.apps.dynatrace.com",
   "app": {
     "name": "Pattern Problems",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Identifies N+1, Chatty API, and other anti-pattern problems in services.",
     "id": "my.pattern.problems.app",
     "icon": "./assets/icon.png",

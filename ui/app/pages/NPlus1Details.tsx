@@ -80,10 +80,10 @@ export function NPlus1Details() {
       header: "Trace",
       accessor: "traceId",
       width: 80,
-      cell: ({ value, row }: any) => (
+      cell: ({ value }: any) => (
         value ? (
           <a
-            href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?traceId=${value}&spanId=${row.original.spanId}`}
+            href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?traceId=${value}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: "#4589FF", fontSize: 12 }}
