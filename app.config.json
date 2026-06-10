@@ -1,0 +1,20 @@
+{
+  "$schema": "./.dt-app/app.config.schema.json",
+  "environmentUrl": "https://guu84124.apps.dynatrace.com",
+  "app": {
+    "name": "Pattern Problems",
+    "version": "1.0.1",
+    "description": "Identifies N+1, Chatty API, and other anti-pattern problems in services.",
+    "id": "my.pattern.problems.app",
+    "icon": "./assets/icon.png",
+    "scopes": [
+      { "name": "storage:spans:read", "comment": "read distributed traces / spans" },
+      { "name": "storage:events:read", "comment": "read events" },
+      { "name": "storage:entities:read", "comment": "read entity data" },
+      { "name": "storage:metrics:read", "comment": "read metrics" },
+      { "name": "storage:buckets:read", "comment": "read storage buckets" },
+      { "name": "storage:logs:read", "comment": "read log data" }
+    ],
+    "functionSandbox": {}
+  }
+}

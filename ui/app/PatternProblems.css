@@ -1,0 +1,302 @@
+/* Pattern Problems App Styles */
+
+.pp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.pp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pp-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.pp-help-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+/* AI Insights Button */
+.pp-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(165, 110, 255, 0.35);
+  background: rgba(165, 110, 255, 0.08);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.pp-ai-btn:hover {
+  background: rgba(165, 110, 255, 0.18);
+  border-color: rgba(165, 110, 255, 0.5);
+}
+.pp-ai-btn.active {
+  background: rgba(165, 110, 255, 0.15);
+  border-color: rgba(165, 110, 255, 0.5);
+  box-shadow: 0 0 8px rgba(165, 110, 255, 0.15);
+}
+.pp-ai-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* AI Panel */
+.pp-ai-panel {
+  border: 1px solid rgba(165, 110, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(165, 110, 255, 0.04);
+  overflow: hidden;
+  animation: pp-ai-slide-in 0.25s ease-out;
+  margin-bottom: 16px;
+}
+@keyframes pp-ai-slide-in {
+  from { opacity: 0; max-height: 0; transform: translateY(-8px); }
+  to   { opacity: 1; max-height: 2000px; transform: translateY(0); }
+}
+.pp-ai-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(165, 110, 255, 0.15);
+}
+.pp-ai-panel-header svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.pp-ai-panel-body {
+  padding: 16px;
+}
+.pp-ai-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.5;
+  margin-bottom: 8px;
+}
+.pp-ai-insight-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+.pp-ai-insight-row.good {
+  background: rgba(13, 156, 41, 0.06);
+  border-left: 3px solid #0D9C29;
+}
+.pp-ai-insight-row.warning {
+  background: rgba(255, 131, 43, 0.06);
+  border-left: 3px solid #FF832B;
+}
+.pp-ai-insight-row.critical {
+  background: rgba(194, 25, 48, 0.06);
+  border-left: 3px solid #C21930;
+}
+.pp-ai-insight-row.info {
+  background: rgba(69, 137, 255, 0.06);
+  border-left: 3px solid #4589FF;
+}
+.pp-ai-recommendation {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.04);
+  margin-bottom: 4px;
+}
+.pp-ai-rec-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pp-ai-rec-badge.high {
+  background: rgba(194, 25, 48, 0.12);
+  color: #C21930;
+}
+.pp-ai-rec-badge.medium {
+  background: rgba(255, 131, 43, 0.12);
+  color: #FF832B;
+}
+.pp-ai-rec-badge.low {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+@keyframes pp-ai-typewriter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.pp-ai-stream-word {
+  display: inline;
+  opacity: 0;
+  animation: pp-ai-typewriter 0.3s ease forwards;
+}
+
+/* KPI Cards */
+.pp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.pp-kpi-card {
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.03);
+}
+.pp-kpi-card-label {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+.pp-kpi-card-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+.pp-kpi-card-value.critical {
+  color: #C21930;
+}
+.pp-kpi-card-value.warning {
+  color: #FF832B;
+}
+.pp-kpi-card-value.good {
+  color: #0D9C29;
+}
+
+/* Charts row */
+.pp-charts-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.pp-chart-card {
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 10px;
+  padding: 16px;
+  background: rgba(128, 128, 128, 0.02);
+}
+.pp-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  opacity: 0.8;
+}
+
+/* Table section */
+.pp-table-section {
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 10px;
+  padding: 16px;
+  background: rgba(128, 128, 128, 0.02);
+}
+.pp-table-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* Pattern type badges */
+.pp-pattern-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pp-pattern-badge.n-plus-1 {
+  background: rgba(194, 25, 48, 0.1);
+  color: #C21930;
+}
+.pp-pattern-badge.chatty {
+  background: rgba(255, 131, 43, 0.1);
+  color: #FF832B;
+}
+.pp-pattern-badge.circular {
+  background: rgba(165, 110, 255, 0.1);
+  color: #A56EFF;
+}
+.pp-pattern-badge.slow-consumer {
+  background: rgba(69, 137, 255, 0.1);
+  color: #4589FF;
+}
+
+/* Intro banner */
+.pp-intro-banner {
+  padding: 16px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(69, 137, 255, 0.2);
+  background: rgba(69, 137, 255, 0.04);
+  margin-bottom: 20px;
+}
+.pp-intro-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+/* Loading */
+.pp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  opacity: 0.5;
+}
+
+/* Two column */
+.pp-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .pp-charts-row { grid-template-columns: 1fr; }
+  .pp-two-col { grid-template-columns: 1fr; }
+}
