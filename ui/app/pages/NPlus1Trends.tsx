@@ -24,10 +24,10 @@ export function NPlus1Trends() {
 
   // Scatter: high-count spans plotted over time
   const scatterQuery = `fetch spans, ${tf}
-| filter db.system != "null" and aggregation.count > 10
+| filter db.system != "null" and aggregation.count > 1
 | fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
-| sort aggregation.count desc
-| limit 500`;
+| sort end_time asc
+| limit 1000`;
 
   // Estimated annual projection (weekly * 52)
   const annualQuery = `fetch spans, from: now()-7d
@@ -43,11 +43,11 @@ export function NPlus1Trends() {
   const scatterData = useMemo(() => {
     if (!scatterResult.data?.records) return [];
     return scatterResult.data.records.map((r: any) => ({
-      time: String(r.end_time ?? ""),
+      time: new Date(String(r.end_time ?? "")).getTime(),
       count: Number(r["aggregation.count"] ?? 0),
       service: String(r.service_name ?? "Unknown"),
       db: String(r["db.system"] ?? ""),
-    }));
+    })).filter(d => !isNaN(d.time));
   }, [scatterResult.data]);
 
   const annualEstimate = useMemo(() => {
@@ -141,16 +141,23 @@ export function NPlus1Trends() {
               <text x="10" y="195" fontSize="10" fill="rgba(128,128,128,0.6)">0</text>
               {/* Grid lines */}
               <line x1="40" y1="20" x2="790" y2="20" stroke="rgba(128,128,128,0.1)" />
+              <line x1="40" y1="60" x2="790" y2="60" stroke="rgba(128,128,128,0.1)" />
               <line x1="40" y1="100" x2="790" y2="100" stroke="rgba(128,128,128,0.1)" />
+              <line x1="40" y1="140" x2="790" y2="140" stroke="rgba(128,128,128,0.1)" />
               <line x1="40" y1="180" x2="790" y2="180" stroke="rgba(128,128,128,0.1)" />
               {/* Dots */}
-              {scatterData.map((d, i) => {
-                const x = 40 + (i / Math.max(scatterData.length - 1, 1)) * 750;
-                const y = 180 - (d.count / maxScatterCount) * 160;
-                const r = Math.min(3 + (d.count / maxScatterCount) * 5, 8);
-                const color = d.count > 100 ? "#C21930" : d.count > 50 ? "#FF832B" : "#4589FF";
-                return <circle key={i} cx={x} cy={y} r={r} fill={color} opacity={0.6} />;
-              })}
+              {(() => {
+                const minTime = Math.min(...scatterData.map(d => d.time));
+                const maxTime = Math.max(...scatterData.map(d => d.time));
+                const timeRange = maxTime - minTime || 1;
+                return scatterData.map((d, i) => {
+                  const x = 40 + ((d.time - minTime) / timeRange) * 750;
+                  const y = 180 - (d.count / maxScatterCount) * 160;
+                  const r = Math.min(2 + (d.count / maxScatterCount) * 4, 6);
+                  const color = d.count > 100 ? "#C21930" : d.count > 50 ? "#FF832B" : d.count > 20 ? "#4589FF" : "#7cc7ff";
+                  return <circle key={i} cx={x} cy={y} r={r} fill={color} opacity={0.7} />;
+                });
+              })()}
             </svg>
             <Flex justifyContent="space-between" style={{ fontSize: 10, opacity: 0.4, padding: "0 40px" }}>
               <span>Oldest</span>
