@@ -125,7 +125,7 @@ export function ChattyAPIs() {
     };
   }, [chattyData, summaryData]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeChat);
+  const { panel: aiPanel } = useAIInsights(analyzeChat, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>

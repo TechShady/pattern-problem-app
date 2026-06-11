@@ -149,7 +149,7 @@ export function NPlus1Details() {
     };
   }, [tableData]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeDetails);
+  const { panel: aiPanel } = useAIInsights(analyzeDetails, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>

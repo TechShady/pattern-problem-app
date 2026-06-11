@@ -5,6 +5,8 @@ import { Heading, Text, Strong, Paragraph } from "@dynatrace/strato-components/t
 import { ProgressBar } from "@dynatrace/strato-components/content";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
+import { KpiCard, ForecastProvider } from "../components/KpiCard";
+import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
@@ -124,7 +126,7 @@ export function ImpactAnalysis() {
     };
   }, [impactKpis, serviceData, totalWastedMs, totalCostPerWeek]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeImpact);
+  const { panel: aiPanel } = useAIInsights(analyzeImpact, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>
@@ -146,30 +148,30 @@ export function ImpactAnalysis() {
         <>
           {/* Impact KPIs */}
           <div className="pp-kpi-grid" style={{ marginBottom: 24 }}>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Reducible Queries</div>
-              <div className="pp-kpi-card-value critical">
-                {impactKpis?.reducible.toLocaleString() ?? "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Query Reduction %</div>
-              <div className="pp-kpi-card-value warning">
-                {impactKpis ? `${impactKpis.reductionPct.toFixed(1)}%` : "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Wasted Processing Time</div>
-              <div className="pp-kpi-card-value critical">
-                {totalWastedMs > 0 ? `${(totalWastedMs / 1000).toFixed(1)}s` : "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Est. Cost / Year</div>
-              <div className="pp-kpi-card-value warning">
-                {totalCostPerWeek > 0 ? `$${(totalCostPerWeek * 52).toFixed(2)}` : "—"}
-              </div>
-            </div>
+            <KpiCard
+              label="Reducible Queries"
+              value={impactKpis?.reducible.toLocaleString() ?? "—"}
+              rawValue={impactKpis?.reducible}
+              color="#C21930"
+            />
+            <KpiCard
+              label="Query Reduction %"
+              value={impactKpis ? `${impactKpis.reductionPct.toFixed(1)}%` : "—"}
+              rawValue={impactKpis?.reductionPct}
+              color="#FF832B"
+            />
+            <KpiCard
+              label="Wasted Processing Time"
+              value={totalWastedMs > 0 ? `${(totalWastedMs / 1000).toFixed(1)}s` : "—"}
+              rawValue={totalWastedMs > 0 ? totalWastedMs / 1000 : undefined}
+              color="#C21930"
+            />
+            <KpiCard
+              label="Est. Cost / Year"
+              value={totalCostPerWeek > 0 ? `$${(totalCostPerWeek * 52).toFixed(2)}` : "—"}
+              rawValue={totalCostPerWeek > 0 ? totalCostPerWeek * 52 : undefined}
+              color="#FF832B"
+            />
           </div>
 
           {/* Service impact breakdown */}

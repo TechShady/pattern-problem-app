@@ -150,7 +150,7 @@ export function CircularDependencies() {
     };
   }, [circularData, circularPairs]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeCircular);
+  const { panel: aiPanel } = useAIInsights(analyzeCircular, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>

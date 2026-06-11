@@ -108,10 +108,12 @@ export function AIInsightsPanel({ data, onClose }: { data: AIInsightsData; onClo
   );
 }
 
-export function useAIInsights(analysisFn: () => AIInsightsData): { panel: React.ReactNode } {
-  const { open, close } = useContext(AIInsightsContext);
-  const data = useMemo(() => open ? analysisFn() : null, [open, analysisFn]);
+export function useAIInsights(analysisFn: () => AIInsightsData, open?: boolean, close?: () => void): { panel: React.ReactNode } {
+  const ctx = useContext(AIInsightsContext);
+  const isOpen = open ?? ctx.open;
+  const onClose = close ?? ctx.close;
+  const data = useMemo(() => isOpen ? analysisFn() : null, [isOpen, analysisFn]);
   return {
-    panel: open && data ? <AIInsightsPanel data={data} onClose={close} /> : null,
+    panel: isOpen && data ? <AIInsightsPanel data={data} onClose={onClose} /> : null,
   };
 }

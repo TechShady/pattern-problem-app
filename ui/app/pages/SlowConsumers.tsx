@@ -6,6 +6,7 @@ import { ProgressBar } from "@dynatrace/strato-components/content";
 import { DataTable } from "@dynatrace/strato-components-preview/tables";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
+import { KpiCard } from "../components/KpiCard";
 import { useTimeframe } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
@@ -141,7 +142,7 @@ export function SlowConsumers() {
     };
   }, [slowData, longTailData]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeSlowConsumers);
+  const { panel: aiPanel } = useAIInsights(analyzeSlowConsumers, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>
@@ -159,24 +160,24 @@ export function SlowConsumers() {
 
       {/* KPI summary */}
       <div className="pp-kpi-grid" style={{ marginBottom: 20 }}>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">Services with High Variance</div>
-          <div className={`pp-kpi-card-value ${slowData.length > 5 ? "critical" : slowData.length > 0 ? "warning" : "good"}`}>
-            {slowData.length}
-          </div>
-        </div>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">Long-Tail Spans (&gt;5s)</div>
-          <div className={`pp-kpi-card-value ${longTailData.length > 20 ? "critical" : "warning"}`}>
-            {longTailData.length}
-          </div>
-        </div>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">Worst Variance Ratio</div>
-          <div className="pp-kpi-card-value critical">
-            {slowData.length > 0 ? `${slowData[0].varianceRatio.toFixed(0)}x` : "—"}
-          </div>
-        </div>
+        <KpiCard
+          label="Services with High Variance"
+          value={slowData.length}
+          rawValue={slowData.length}
+          color={slowData.length > 5 ? "#C21930" : slowData.length > 0 ? "#FF832B" : "#24A148"}
+        />
+        <KpiCard
+          label="Long-Tail Spans (>5s)"
+          value={longTailData.length}
+          rawValue={longTailData.length}
+          color={longTailData.length > 20 ? "#C21930" : "#FF832B"}
+        />
+        <KpiCard
+          label="Worst Variance Ratio"
+          value={slowData.length > 0 ? `${slowData[0].varianceRatio.toFixed(0)}x` : "—"}
+          rawValue={slowData.length > 0 ? slowData[0].varianceRatio : undefined}
+          color="#C21930"
+        />
       </div>
 
       {/* Main table */}

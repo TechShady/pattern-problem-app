@@ -5,6 +5,8 @@ import { Heading, Text, Paragraph, Strong } from "@dynatrace/strato-components/t
 import { ProgressBar } from "@dynatrace/strato-components/content";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
+import { KpiCard, ForecastProvider } from "../components/KpiCard";
+import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
@@ -12,10 +14,23 @@ import type { AIInsightsData } from "../components/AIInsights";
 export function PatternOverview() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
+  const [forecastState, setForecastState] = useState<{ label: string; sparkline: number[]; color?: string } | null>(null);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
+  const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
+    setForecastState({ label, sparkline, color });
+  }, []);
 
   const tf = `from: ${timeframe.from}`;
+
+  // Compute previous period: e.g. now()-7d becomes prev from: now()-14d, to: now()-7d
+  const prevTf = useMemo(() => {
+    const match = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+    if (!match) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
+  }, [timeframe.from]);
 
   // N+1 Spans count
   const nPlus1SpansQuery = `fetch spans, ${tf}
@@ -62,6 +77,22 @@ export function PatternOverview() {
 | sort count desc
 | limit 10`;
 
+  // Sparkline: N+1 span count bucketed over time
+  const sparklineQuery = `fetch spans, ${tf}
+| filter db.system != "null" and aggregation.count > 1
+| makeTimeseries n1_count = count(), total_queries = sum(aggregation.count), avg_per_span = avg(toDouble(aggregation.count)), max_per_span = max(aggregation.count), interval: auto`;
+
+  // Previous period aggregate (for trend arrows)
+  const prevQuery = prevTf ? `fetch spans, ${prevTf}
+| filter db.system != "null"
+| summarize total_spans_n1 = countif(aggregation.count > 1),
+            total_queries = sum(aggregation.count),
+            avg_queries_n1 = avg(if(aggregation.count > 1, toDouble(aggregation.count))),
+            max_queries_n1 = max(if(aggregation.count > 1, aggregation.count)),
+            c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count)), s=sum(aggregation.count)
+| fieldsAdd reducible = toDouble(s1) - toDouble(c1),
+            reduction_pct = ((toDouble(s1)-toDouble(c1)) / toDouble(s)) * 100` : null;
+
   const nPlus1SpansResult = useDql({ query: nPlus1SpansQuery });
   const totalQueriesResult = useDql({ query: totalQueriesQuery });
   const avgQueriesResult = useDql({ query: avgQueriesQuery });
@@ -69,6 +100,39 @@ export function PatternOverview() {
   const reductionResult = useDql({ query: reductionQuery });
   const servicesResult = useDql({ query: servicesQuery });
   const databasesResult = useDql({ query: databasesQuery });
+  const sparklineResult = useDql({ query: sparklineQuery });
+  const prevResult = useDql({ query: prevQuery ?? "fetch spans, from: now()-1s | limit 0" });
+
+  // Extract sparkline arrays from timeseries result
+  const sparklines = useMemo(() => {
+    const rec = sparklineResult.data?.records?.[0] as any;
+    if (!rec) return { n1Count: [], totalQueries: [], avgPerSpan: [], maxPerSpan: [] };
+    const extract = (field: string) => {
+      const arr = rec[field];
+      if (Array.isArray(arr)) return arr.map((v: any) => Number(v ?? 0));
+      return [];
+    };
+    return {
+      n1Count: extract("n1_count"),
+      totalQueries: extract("total_queries"),
+      avgPerSpan: extract("avg_per_span"),
+      maxPerSpan: extract("max_per_span"),
+    };
+  }, [sparklineResult.data]);
+
+  // Previous period values
+  const prev = useMemo(() => {
+    const rec = prevResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return {
+      n1Spans: Number(rec.total_spans_n1 ?? 0),
+      totalQueries: Number(rec.total_queries ?? 0),
+      avgQueries: Number(rec.avg_queries_n1 ?? 0),
+      maxQueries: Number(rec.max_queries_n1 ?? 0),
+      reducible: Number(rec.reducible ?? 0),
+      reductionPct: Number(rec.reduction_pct ?? 0),
+    };
+  }, [prevResult.data, prevTf]);
 
   const nPlus1Spans = useMemo(() => {
     const rec = nPlus1SpansResult.data?.records?.[0];
@@ -181,10 +245,11 @@ export function PatternOverview() {
     };
   }, [nPlus1Spans, totalQueries, avgQueries, maxQueries, reduction, servicesList]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeOverview);
+  const { panel: aiPanel } = useAIInsights(analyzeOverview, aiOpen, closeAi);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>
+      <ForecastProvider value={openForecast}>
       <AppHeader aiOpen={aiOpen} onAiToggle={() => setAiOpen(v => !v)} />
 
       {/* Intro banner */}
@@ -205,42 +270,53 @@ export function PatternOverview() {
       ) : (
         <>
           <div className="pp-kpi-grid">
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">N+1 Spans</div>
-              <div className={`pp-kpi-card-value ${(nPlus1Spans ?? 0) > 50 ? "critical" : (nPlus1Spans ?? 0) > 10 ? "warning" : "good"}`}>
-                {nPlus1Spans?.toLocaleString() ?? "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Total DB Queries</div>
-              <div className={`pp-kpi-card-value ${(totalQueries ?? 0) > 10000 ? "critical" : "warning"}`}>
-                {totalQueries?.toLocaleString() ?? "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Avg Queries / N+1 Span</div>
-              <div className={`pp-kpi-card-value ${(avgQueries ?? 0) > 20 ? "critical" : (avgQueries ?? 0) > 5 ? "warning" : "good"}`}>
-                {avgQueries?.toFixed(1) ?? "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Max Queries (Worst Span)</div>
-              <div className={`pp-kpi-card-value critical`}>
-                {maxQueries?.toLocaleString() ?? "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Query Reduction Potential</div>
-              <div className={`pp-kpi-card-value ${(reduction?.percentage ?? 0) > 30 ? "critical" : "warning"}`}>
-                {reduction ? `${reduction.percentage.toFixed(1)}%` : "—"}
-              </div>
-            </div>
-            <div className="pp-kpi-card">
-              <div className="pp-kpi-card-label">Reducible Queries</div>
-              <div className={`pp-kpi-card-value ${(reduction?.count ?? 0) > 1000 ? "critical" : "warning"}`}>
-                {reduction?.count.toLocaleString() ?? "—"}
-              </div>
-            </div>
+            <KpiCard
+              label="N+1 Spans"
+              value={nPlus1Spans?.toLocaleString() ?? "—"}
+              rawValue={nPlus1Spans ?? undefined}
+              prevRawValue={prev?.n1Spans ?? null}
+              sparkline={sparklines.n1Count}
+              color={(nPlus1Spans ?? 0) > 50 ? "#C21930" : (nPlus1Spans ?? 0) > 10 ? "#FF832B" : "#24A148"}
+            />
+            <KpiCard
+              label="Total DB Queries"
+              value={totalQueries?.toLocaleString() ?? "—"}
+              rawValue={totalQueries ?? undefined}
+              prevRawValue={prev?.totalQueries ?? null}
+              sparkline={sparklines.totalQueries}
+              color={(totalQueries ?? 0) > 10000 ? "#C21930" : "#FF832B"}
+            />
+            <KpiCard
+              label="Avg Queries / N+1 Span"
+              value={avgQueries?.toFixed(1) ?? "—"}
+              rawValue={avgQueries ?? undefined}
+              prevRawValue={prev?.avgQueries ?? null}
+              sparkline={sparklines.avgPerSpan}
+              color={(avgQueries ?? 0) > 20 ? "#C21930" : (avgQueries ?? 0) > 5 ? "#FF832B" : "#24A148"}
+            />
+            <KpiCard
+              label="Max Queries (Worst Span)"
+              value={maxQueries?.toLocaleString() ?? "—"}
+              rawValue={maxQueries ?? undefined}
+              prevRawValue={prev?.maxQueries ?? null}
+              sparkline={sparklines.maxPerSpan}
+              color="#C21930"
+            />
+            <KpiCard
+              label="Query Reduction Potential"
+              value={reduction ? `${reduction.percentage.toFixed(1)}%` : "—"}
+              rawValue={reduction?.percentage ?? undefined}
+              prevRawValue={prev?.reductionPct ?? null}
+              color={(reduction?.percentage ?? 0) > 30 ? "#C21930" : "#FF832B"}
+            />
+            <KpiCard
+              label="Reducible Queries"
+              value={reduction?.count.toLocaleString() ?? "—"}
+              rawValue={reduction?.count ?? undefined}
+              prevRawValue={prev?.reducible ?? null}
+              sparkline={sparklines.totalQueries.length > 0 ? sparklines.totalQueries.map((v, i) => v - sparklines.n1Count[i]) : undefined}
+              color={(reduction?.count ?? 0) > 1000 ? "#C21930" : "#FF832B"}
+            />
           </div>
 
           {/* Services and Databases distribution */}
@@ -296,6 +372,21 @@ export function PatternOverview() {
           </div>
         </>
       )}
+      {forecastState && (
+        <ForecastModal
+          label={forecastState.label}
+          sparkline={forecastState.sparkline}
+          color={forecastState.color}
+          onClose={() => setForecastState(null)}
+          correlatedMetrics={[
+            { label: "N+1 Span Count", data: sparklines.n1Count },
+            { label: "Total Queries", data: sparklines.totalQueries },
+            { label: "Avg Queries/Span", data: sparklines.avgPerSpan },
+            { label: "Max Queries/Span", data: sparklines.maxPerSpan },
+          ]}
+        />
+      )}
+      </ForecastProvider>
     </AIInsightsContext.Provider>
   );
 }

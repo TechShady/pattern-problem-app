@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Text, Strong } from "@dynatrace/strato-components/typography";
 import { ProgressBar } from "@dynatrace/strato-components/content";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
+import { KpiCard, ForecastProvider } from "../components/KpiCard";
+import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
@@ -13,22 +15,17 @@ export function NPlus1Trends() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
   const [scatterMaximized, setScatterMaximized] = useState(false);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; data: any } | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
 
   const tf = `from: ${timeframe.from}`;
 
-  // Timeseries: N+1 query count over time
-  const timeseriesQuery = `fetch spans, ${tf}
-| filter db.system != "null" and aggregation.count > 1
-| makeTimeseries \`N+1 Query Count\` = sum(aggregation.count), interval: auto`;
-
-  // Scatter: high-count spans plotted over time
+  // Scatter: N+1 spans plotted over time (no sort = DQL returns spread across full timeframe)
   const scatterQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
-| sort end_time asc
-| limit 5000`;
+| fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system`;
 
   // Estimated annual projection (weekly * 52)
   const annualQuery = `fetch spans, from: now()-7d
@@ -37,7 +34,6 @@ export function NPlus1Trends() {
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
 | fieldsAdd queryReduction = (toDouble(s1)-toDouble(c1))*52`;
 
-  const timeseriesResult = useDql({ query: timeseriesQuery });
   const scatterResult = useDql({ query: scatterQuery });
   const annualResult = useDql({ query: annualQuery });
 
@@ -98,39 +94,67 @@ export function NPlus1Trends() {
     };
   }, [scatterData, annualEstimate]);
 
-  const { panel: aiPanel } = useAIInsights(analyzeTimeseries);
+  const [forecastState, setForecastState] = useState<{ label: string; sparkline: number[]; color?: string } | null>(null);
+  const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
+    setForecastState({ label, sparkline, color });
+  }, []);
+
+  const { panel: aiPanel } = useAIInsights(analyzeTimeseries, aiOpen, closeAi);
+
+  // Build sparklines from scatter data (bucket by time)
+  const trendSparklines = useMemo(() => {
+    if (scatterData.length < 2) return { counts: [], highImpact: [] };
+    const minT = Math.min(...scatterData.map(d => d.time));
+    const maxT = Math.max(...scatterData.map(d => d.time));
+    const bucketCount = 16;
+    const bucketMs = (maxT - minT) / bucketCount || 1;
+    const counts = new Array(bucketCount).fill(0);
+    const highImpact = new Array(bucketCount).fill(0);
+    for (const d of scatterData) {
+      const idx = Math.min(Math.floor((d.time - minT) / bucketMs), bucketCount - 1);
+      counts[idx] += d.count;
+      if (d.count > 50) highImpact[idx]++;
+    }
+    return { counts, highImpact };
+  }, [scatterData]);
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>
+      <ForecastProvider value={openForecast}>
       <AppHeader aiOpen={aiOpen} onAiToggle={() => setAiOpen(v => !v)} />
       {aiPanel}
 
       {/* Annual estimate KPI */}
       <div className="pp-kpi-grid" style={{ marginBottom: 20 }}>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">Est. Unnecessary Queries / Year</div>
-          <div className="pp-kpi-card-value critical">
-            {annualEstimate !== null ? annualEstimate.toLocaleString() : "—"}
-          </div>
-        </div>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">High-Impact Spans (&gt;50 queries)</div>
-          <div className="pp-kpi-card-value warning">
-            {scatterData.filter(d => d.count > 50).length}
-          </div>
-        </div>
-        <div className="pp-kpi-card">
-          <div className="pp-kpi-card-label">Affected Services</div>
-          <div className="pp-kpi-card-value info" style={{ color: "#4589FF" }}>
-            {new Set(scatterData.map(d => d.service)).size}
-          </div>
-        </div>
+        <KpiCard
+          label="Est. Unnecessary Queries / Year"
+          value={annualEstimate !== null ? annualEstimate.toLocaleString() : "—"}
+          rawValue={annualEstimate ?? undefined}
+          sparkline={trendSparklines.counts}
+          color="#C21930"
+        />
+        <KpiCard
+          label="High-Impact Spans (>50 queries)"
+          value={scatterData.filter(d => d.count > 50).length}
+          rawValue={scatterData.filter(d => d.count > 50).length}
+          sparkline={trendSparklines.highImpact}
+          color="#FF832B"
+        />
+        <KpiCard
+          label="Affected Services"
+          value={new Set(scatterData.map(d => d.service)).size}
+          rawValue={new Set(scatterData.map(d => d.service)).size}
+          color="#4589FF"
+        />
       </div>
 
       {/* Scatter plot */}
-      <div className="pp-chart-card" style={{ marginBottom: 20, ...(scatterMaximized ? { position: "fixed", inset: 0, zIndex: 9999, margin: 0, borderRadius: 0, overflow: "auto" } : {}) }}>
-        <Flex justifyContent="space-between" alignItems="center">
-          <div className="pp-chart-title">N+1 Spans Over Time (Scatter)</div>
+      <div className="pp-chart-card" style={{
+        marginBottom: 20,
+        ...(scatterMaximized ? { position: "fixed", inset: 0, zIndex: 99999, margin: 0, borderRadius: 0, overflow: "auto", background: "var(--dt-colors-surface-default, #1a1e38)" } : {}),
+      }}>
+        <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 8 }}>
+          <div className="pp-chart-title" style={{ margin: 0 }}>N+1 Spans Over Time (Scatter)</div>
           <button
             onClick={() => setScatterMaximized(v => !v)}
             style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "inherit" }}
@@ -144,9 +168,10 @@ export function NPlus1Trends() {
           <Text style={{ opacity: 0.5, padding: 20 }}>No N+1 patterns detected in this timeframe</Text>
         ) : (
           (() => {
-            const chartH = scatterMaximized ? 600 : 350;
-            const padL = 50, padR = 10, padT = 20, padB = 40;
-            const plotW = 800 - padL - padR;
+            const chartH = scatterMaximized ? Math.max(window.innerHeight - 80, 500) : 400;
+            const padL = 40, padR = 10, padT = 10, padB = 30;
+            const viewW = 1000;
+            const plotW = viewW - padL - padR;
             const plotH = chartH - padT - padB;
             const minTime = Math.min(...scatterData.map(d => d.time));
             const maxTime = Math.max(...scatterData.map(d => d.time));
@@ -156,15 +181,24 @@ export function NPlus1Trends() {
             const yStep = Math.ceil(yMax / 8 / 50) * 50 || 50;
             const yTicks: number[] = [];
             for (let v = 0; v <= yMax; v += yStep) yTicks.push(v);
-            if (yTicks[yTicks.length - 1] < yMax) yTicks.push(yMax);
-            // X-axis date ticks
-            const xTickCount = scatterMaximized ? 14 : 7;
+            // X-axis: auto-scale labels based on timeframe duration
+            const durationDays = timeRange / (1000 * 60 * 60 * 24);
+            let xTickCount: number;
+            let formatLabel: (d: Date) => string;
+            if (durationDays <= 1) {
+              xTickCount = 12;
+              formatLabel = (d) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+            } else if (durationDays <= 7) {
+              xTickCount = Math.min(14, Math.ceil(durationDays * 2));
+              formatLabel = (d) => `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}\n${d.getHours() === 0 ? "" : d.getHours() + ":00"}`.trim();
+            } else {
+              xTickCount = Math.min(14, Math.ceil(durationDays));
+              formatLabel = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            }
             const xTicks: { time: number; label: string }[] = [];
             for (let i = 0; i <= xTickCount; i++) {
               const t = minTime + (timeRange * i) / xTickCount;
-              const d = new Date(t);
-              const label = `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${d.getHours() === 0 ? "" : d.getHours() + ":00"}`.trim();
-              xTicks.push({ time: t, label });
+              xTicks.push({ time: t, label: formatLabel(new Date(t)) });
             }
             // Service colors
             const serviceColors: Record<string, string> = {};
@@ -173,27 +207,56 @@ export function NPlus1Trends() {
             services.forEach((s, i) => { serviceColors[s] = palette[i % palette.length]; });
 
             return (
-              <div style={{ position: "relative", height: chartH + 10, padding: "8px 0" }}>
-                <svg width="100%" height={chartH} viewBox={`0 0 800 ${chartH}`} preserveAspectRatio="xMidYMid meet">
+              <div
+                ref={chartRef}
+                style={{ position: "relative", height: chartH + 10 }}
+                onMouseLeave={() => setTooltip(null)}
+              >
+                <svg
+                  width="100%"
+                  height={chartH}
+                  viewBox={`0 0 ${viewW} ${chartH}`}
+                  preserveAspectRatio="none"
+                  style={{ display: "block" }}
+                  onMouseMove={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const mx = ((e.clientX - rect.left) / rect.width) * viewW;
+                    const my = ((e.clientY - rect.top) / rect.height) * chartH;
+                    // Find nearest dot
+                    let best: any = null;
+                    let bestDist = 20;
+                    for (const d of scatterData) {
+                      const dx = padL + ((d.time - minTime) / timeRange) * plotW;
+                      const dy = padT + plotH - (d.count / yMax) * plotH;
+                      const dist = Math.sqrt((mx - dx) ** 2 + (my - dy) ** 2);
+                      if (dist < bestDist) { bestDist = dist; best = d; }
+                    }
+                    if (best) {
+                      setTooltip({ x: e.clientX - (chartRef.current?.getBoundingClientRect().left ?? 0), y: e.clientY - (chartRef.current?.getBoundingClientRect().top ?? 0), data: best });
+                    } else {
+                      setTooltip(null);
+                    }
+                  }}
+                >
                   {/* Y-axis grid + labels */}
                   {yTicks.map(v => {
                     const y = padT + plotH - (v / yMax) * plotH;
                     return (
                       <g key={`y-${v}`}>
-                        <line x1={padL} y1={y} x2={padL + plotW} y2={y} stroke="rgba(128,128,128,0.15)" />
-                        <text x={padL - 5} y={y + 4} fontSize="9" fill="rgba(128,128,128,0.6)" textAnchor="end">{v}</text>
+                        <line x1={padL} y1={y} x2={padL + plotW} y2={y} stroke="rgba(128,128,128,0.12)" />
+                        <text x={padL - 4} y={y + 3} fontSize="9" fill="rgba(128,128,128,0.6)" textAnchor="end">{v}</text>
                       </g>
                     );
                   })}
                   {/* Y-axis title */}
-                  <text x="12" y={chartH / 2} fontSize="10" fill="rgba(128,128,128,0.5)" textAnchor="middle" transform={`rotate(-90, 12, ${chartH / 2})`}>N+1 Queries</text>
+                  <text x="10" y={chartH / 2} fontSize="9" fill="rgba(128,128,128,0.5)" textAnchor="middle" transform={`rotate(-90, 10, ${chartH / 2})`}>N+1 Queries</text>
                   {/* X-axis date labels */}
                   {xTicks.map((tick, i) => {
                     const x = padL + ((tick.time - minTime) / timeRange) * plotW;
                     return (
                       <g key={`x-${i}`}>
-                        <line x1={x} y1={padT} x2={x} y2={padT + plotH} stroke="rgba(128,128,128,0.08)" />
-                        <text x={x} y={padT + plotH + 14} fontSize="9" fill="rgba(128,128,128,0.6)" textAnchor="middle">{tick.label}</text>
+                        <line x1={x} y1={padT} x2={x} y2={padT + plotH} stroke="rgba(128,128,128,0.06)" />
+                        <text x={x} y={padT + plotH + 14} fontSize="8" fill="rgba(128,128,128,0.6)" textAnchor="middle">{tick.label}</text>
                       </g>
                     );
                   })}
@@ -202,35 +265,52 @@ export function NPlus1Trends() {
                     const x = padL + ((d.time - minTime) / timeRange) * plotW;
                     const y = padT + plotH - (d.count / yMax) * plotH;
                     const r = Math.min(2 + (d.count / yMax) * 3, 5);
-                    return <circle key={i} cx={x} cy={y} r={r} fill={serviceColors[d.service] || "#4589FF"} opacity={0.7} />;
+                    return <circle key={i} cx={x} cy={y} r={r} fill={serviceColors[d.service] || "#4589FF"} opacity={0.75} />;
                   })}
                 </svg>
+                {/* Tooltip */}
+                {tooltip && (
+                  <div style={{
+                    position: "absolute",
+                    left: tooltip.x + 12,
+                    top: tooltip.y - 10,
+                    background: "rgba(0,0,0,0.85)",
+                    color: "#fff",
+                    padding: "6px 10px",
+                    borderRadius: 4,
+                    fontSize: 11,
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                    zIndex: 10,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                  }}>
+                    <div style={{ fontWeight: 700 }}>{tooltip.data.service}</div>
+                    <div>Queries: <strong>{tooltip.data.count}</strong></div>
+                    <div>DB: {tooltip.data.db}</div>
+                    <div style={{ opacity: 0.7 }}>{new Date(tooltip.data.time).toLocaleString()}</div>
+                  </div>
+                )}
               </div>
             );
           })()
         )}
-        <Text style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
+        <Text style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
           Each dot = one N+1 span. Color = service. Y-axis = query count. {scatterData.length.toLocaleString()} spans shown.
         </Text>
       </div>
-
-      {/* Top spans by service */}
-      <div className="pp-chart-card">
-        <div className="pp-chart-title">Top Scatter Points by Service</div>
-        {scatterData.slice(0, 15).map((d, i) => (
-          <Flex key={i} justifyContent="space-between" alignItems="center" style={{ padding: "4px 0", borderBottom: "1px solid rgba(128,128,128,0.06)" }}>
-            <Text style={{ fontSize: 12 }}>{d.service}</Text>
-            <Flex alignItems="center" gap={8}>
-              <Text style={{ fontSize: 11, opacity: 0.5 }}>{d.db}</Text>
-              <span style={{
-                padding: "2px 6px", borderRadius: 3, fontSize: 11, fontWeight: 700,
-                background: d.count > 100 ? "rgba(194,25,48,0.12)" : "rgba(255,131,43,0.12)",
-                color: d.count > 100 ? "#C21930" : "#FF832B",
-              }}>{d.count}</span>
-            </Flex>
-          </Flex>
-        ))}
-      </div>
+      {forecastState && (
+        <ForecastModal
+          label={forecastState.label}
+          sparkline={forecastState.sparkline}
+          color={forecastState.color}
+          onClose={() => setForecastState(null)}
+          correlatedMetrics={[
+            { label: "N+1 Query Volume", data: trendSparklines.counts },
+            { label: "High-Impact Spans", data: trendSparklines.highImpact },
+          ]}
+        />
+      )}
+      </ForecastProvider>
     </AIInsightsContext.Provider>
   );
 }
