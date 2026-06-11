@@ -22,6 +22,15 @@ export function NPlus1Trends() {
 
   const tf = `from: ${timeframe.from}`;
 
+  // Compute previous period
+  const prevTf = useMemo(() => {
+    const match = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+    if (!match) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
+  }, [timeframe.from]);
+
   // Scatter: N+1 spans plotted over time (no sort = DQL returns spread across full timeframe)
   const scatterQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
@@ -34,8 +43,15 @@ export function NPlus1Trends() {
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
 | fieldsAdd queryReduction = (toDouble(s1)-toDouble(c1))*52`;
 
+  // Previous period counts for comparison
+  const prevCountQuery = prevTf ? `fetch spans, ${prevTf}
+| filter db.system != "null" and aggregation.count > 1
+| summarize total = count(), high_impact = countif(aggregation.count > 50)
+| fieldsAdd services = count()` : null;
+
   const scatterResult = useDql({ query: scatterQuery });
   const annualResult = useDql({ query: annualQuery });
+  const prevCountResult = useDql({ query: prevCountQuery ?? "fetch spans, from: now()-1s | limit 0" });
 
   const scatterData = useMemo(() => {
     if (!scatterResult.data?.records) return [];
@@ -51,6 +67,15 @@ export function NPlus1Trends() {
     const rec = annualResult.data?.records?.[0];
     return rec ? Number(rec.queryReduction ?? 0) : null;
   }, [annualResult.data]);
+
+  const prevCounts = useMemo(() => {
+    const rec = prevCountResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return {
+      total: Number(rec.total ?? 0),
+      highImpact: Number(rec.high_impact ?? 0),
+    };
+  }, [prevCountResult.data, prevTf]);
 
   const maxScatterCount = useMemo(() => Math.max(...scatterData.map(d => d.count), 1), [scatterData]);
 
@@ -137,6 +162,7 @@ export function NPlus1Trends() {
           label="High-Impact Spans (>50 queries)"
           value={scatterData.filter(d => d.count > 50).length}
           rawValue={scatterData.filter(d => d.count > 50).length}
+          prevRawValue={prevCounts?.highImpact ?? null}
           sparkline={trendSparklines.highImpact}
           color="#FF832B"
         />

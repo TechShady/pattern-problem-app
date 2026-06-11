@@ -19,6 +19,35 @@ export function SlowConsumers() {
 
   const tf = `from: ${timeframe.from}`;
 
+  // Compute previous period
+  const prevTf = useMemo(() => {
+    const match = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+    if (!match) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
+  }, [timeframe.from]);
+
+  // Sparkline: slow consumer count + long-tail count over time
+  const sparklineQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd duration_ms = toDouble(duration) / 1000000.0
+| makeTimeseries high_variance_count = countif(duration_ms > 5000), total_spans = count(), avg_duration = avg(duration_ms), interval: auto`;
+
+  // Previous period aggregates
+  const prevQuery = prevTf ? `fetch spans, ${prevTf}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd service_name = entityName(dt.entity.service),
+            duration_ms = toDouble(duration) / 1000000.0
+| summarize avg_duration_ms = avg(duration_ms),
+            p99_duration_ms = percentile(duration_ms, 99),
+            total_spans = count(),
+            by: { service_name }
+| fieldsAdd variance_ratio = p99_duration_ms / avg_duration_ms
+| summarize high_var_services = countif(variance_ratio > 5 and total_spans > 10),
+            long_tail_count = countif(p99_duration_ms > 5000),
+            max_variance = max(variance_ratio)` : null;
+
   // Detect slow consumers: spans with disproportionately long duration compared to siblings
   // High duration variance within the same trace indicates consumer bottlenecks
   const slowConsumerQuery = `fetch spans, ${tf}
@@ -48,6 +77,27 @@ export function SlowConsumers() {
 
   const slowResult = useDql({ query: slowConsumerQuery });
   const longTailResult = useDql({ query: longTailQuery });
+  const sparklineResult = useDql({ query: sparklineQuery });
+  const prevResult = useDql({ query: prevQuery ?? "fetch spans, from: now()-1s | limit 0" });
+
+  const sparklines = useMemo(() => {
+    const records = sparklineResult.data?.records;
+    if (!records || records.length === 0) return { highVariance: [], avgDuration: [] };
+    return {
+      highVariance: records.map((r: any) => Number(r.high_variance_count ?? 0)),
+      avgDuration: records.map((r: any) => Number(r.avg_duration ?? 0)),
+    };
+  }, [sparklineResult.data]);
+
+  const prev = useMemo(() => {
+    const rec = prevResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return {
+      highVarServices: Number(rec.high_var_services ?? 0),
+      longTailCount: Number(rec.long_tail_count ?? 0),
+      maxVariance: Number(rec.max_variance ?? 0),
+    };
+  }, [prevResult.data, prevTf]);
 
   const slowData = useMemo(() => {
     if (!slowResult.data?.records) return [];
@@ -164,18 +214,24 @@ export function SlowConsumers() {
           label="Services with High Variance"
           value={slowData.length}
           rawValue={slowData.length}
+          prevRawValue={prev?.highVarServices ?? null}
+          sparkline={sparklines.highVariance}
           color={slowData.length > 5 ? "#C21930" : slowData.length > 0 ? "#FF832B" : "#24A148"}
         />
         <KpiCard
           label="Long-Tail Spans (>5s)"
           value={longTailData.length}
           rawValue={longTailData.length}
+          prevRawValue={prev?.longTailCount ?? null}
+          sparkline={sparklines.highVariance}
           color={longTailData.length > 20 ? "#C21930" : "#FF832B"}
         />
         <KpiCard
           label="Worst Variance Ratio"
           value={slowData.length > 0 ? `${slowData[0].varianceRatio.toFixed(0)}x` : "—"}
           rawValue={slowData.length > 0 ? slowData[0].varianceRatio : undefined}
+          prevRawValue={prev?.maxVariance ?? null}
+          sparkline={sparklines.avgDuration}
           color="#C21930"
         />
       </div>

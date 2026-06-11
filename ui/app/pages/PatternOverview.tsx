@@ -103,20 +103,15 @@ export function PatternOverview() {
   const sparklineResult = useDql({ query: sparklineQuery });
   const prevResult = useDql({ query: prevQuery ?? "fetch spans, from: now()-1s | limit 0" });
 
-  // Extract sparkline arrays from timeseries result
+  // Extract sparkline arrays from timeseries result (makeTimeseries returns one record per bucket)
   const sparklines = useMemo(() => {
-    const rec = sparklineResult.data?.records?.[0] as any;
-    if (!rec) return { n1Count: [], totalQueries: [], avgPerSpan: [], maxPerSpan: [] };
-    const extract = (field: string) => {
-      const arr = rec[field];
-      if (Array.isArray(arr)) return arr.map((v: any) => Number(v ?? 0));
-      return [];
-    };
+    const records = sparklineResult.data?.records;
+    if (!records || records.length === 0) return { n1Count: [], totalQueries: [], avgPerSpan: [], maxPerSpan: [] };
     return {
-      n1Count: extract("n1_count"),
-      totalQueries: extract("total_queries"),
-      avgPerSpan: extract("avg_per_span"),
-      maxPerSpan: extract("max_per_span"),
+      n1Count: records.map((r: any) => Number(r.n1_count ?? 0)),
+      totalQueries: records.map((r: any) => Number(r.total_queries ?? 0)),
+      avgPerSpan: records.map((r: any) => Number(r.avg_per_span ?? 0)),
+      maxPerSpan: records.map((r: any) => Number(r.max_per_span ?? 0)),
     };
   }, [sparklineResult.data]);
 

@@ -19,6 +19,15 @@ export function ImpactAnalysis() {
 
   const tf = `from: ${timeframe.from}`;
 
+  // Compute previous period
+  const prevTf = useMemo(() => {
+    const match = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+    if (!match) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
+  }, [timeframe.from]);
+
   // N+1 impact metrics
   const nPlus1ImpactQuery = `fetch spans, ${tf}
 | filter db.system != "null"
@@ -46,6 +55,41 @@ export function ImpactAnalysis() {
 
   const nPlus1Impact = useDql({ query: nPlus1ImpactQuery });
   const serviceImpact = useDql({ query: serviceImpactQuery });
+
+  // Sparkline: N+1 impact over time
+  const sparklineQuery = `fetch spans, ${tf}
+| filter db.system != "null" and aggregation.count > 1
+| makeTimeseries reducible_count = count(), total_wasted = sum(toDouble(duration) / 1000000.0), interval: auto`;
+
+  // Previous period impact
+  const prevImpactQuery = prevTf ? `fetch spans, ${prevTf}
+| filter db.system != "null"
+| summarize total_queries = sum(aggregation.count),
+            n1_queries = sum(if(aggregation.count > 1, aggregation.count)),
+            n1_spans = countif(aggregation.count > 1)
+| fieldsAdd reducible = toDouble(n1_queries) - toDouble(n1_spans),
+            reduction_pct = ((toDouble(n1_queries) - toDouble(n1_spans)) / toDouble(total_queries)) * 100` : null;
+
+  const sparklineResult = useDql({ query: sparklineQuery });
+  const prevImpactResult = useDql({ query: prevImpactQuery ?? "fetch spans, from: now()-1s | limit 0" });
+
+  const sparklines = useMemo(() => {
+    const records = sparklineResult.data?.records;
+    if (!records || records.length === 0) return { reducible: [], wasted: [] };
+    return {
+      reducible: records.map((r: any) => Number(r.reducible_count ?? 0)),
+      wasted: records.map((r: any) => Number(r.total_wasted ?? 0)),
+    };
+  }, [sparklineResult.data]);
+
+  const prevImpact = useMemo(() => {
+    const rec = prevImpactResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return {
+      reducible: Number(rec.reducible ?? 0),
+      reductionPct: Number(rec.reduction_pct ?? 0),
+    };
+  }, [prevImpactResult.data, prevTf]);
 
   const impactKpis = useMemo(() => {
     const rec = nPlus1Impact.data?.records?.[0];
@@ -152,18 +196,22 @@ export function ImpactAnalysis() {
               label="Reducible Queries"
               value={impactKpis?.reducible.toLocaleString() ?? "—"}
               rawValue={impactKpis?.reducible}
+              prevRawValue={prevImpact?.reducible ?? null}
+              sparkline={sparklines.reducible}
               color="#C21930"
             />
             <KpiCard
               label="Query Reduction %"
               value={impactKpis ? `${impactKpis.reductionPct.toFixed(1)}%` : "—"}
               rawValue={impactKpis?.reductionPct}
+              prevRawValue={prevImpact?.reductionPct ?? null}
               color="#FF832B"
             />
             <KpiCard
               label="Wasted Processing Time"
               value={totalWastedMs > 0 ? `${(totalWastedMs / 1000).toFixed(1)}s` : "—"}
               rawValue={totalWastedMs > 0 ? totalWastedMs / 1000 : undefined}
+              sparkline={sparklines.wasted}
               color="#C21930"
             />
             <KpiCard
