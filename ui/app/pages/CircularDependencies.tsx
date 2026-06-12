@@ -154,7 +154,7 @@ export function CircularDependencies() {
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 250,
       cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     {
@@ -272,9 +272,9 @@ export function CircularDependencies() {
             <div key={i} style={{ padding: "8px 12px", marginBottom: 6, borderRadius: 6, border: "1px solid rgba(165,110,255,0.15)", background: "rgba(165,110,255,0.03)" }}>
               <Flex justifyContent="space-between" alignItems="center">
                 <Flex alignItems="center" gap={8}>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(pair.serviceA)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceA}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(pair.serviceA)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceA}</a>
                   <span style={{ fontSize: 16, opacity: 0.4 }}>↔</span>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(pair.serviceB)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceB}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(pair.serviceB)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceB}</a>
                 </Flex>
                 <Flex gap={12}>
                   <Text style={{ fontSize: 11, opacity: 0.6 }}>A→B: {pair.aToBCount}</Text>

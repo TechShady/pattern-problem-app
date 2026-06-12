@@ -258,7 +258,7 @@ export function ImpactAnalysis() {
                   return (
                     <div key={i} style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(128,128,128,0.08)" }}>
                       <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 4 }}>
-                        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{svc.service}</a>
+                        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{svc.service}</a>
                         <Flex gap={16}>
                           <Text style={{ fontSize: 11, opacity: 0.6 }}>{svc.n1Count.toLocaleString()} queries</Text>
                           <Text style={{ fontSize: 11, opacity: 0.6 }}>{svc.spanCount} spans</Text>

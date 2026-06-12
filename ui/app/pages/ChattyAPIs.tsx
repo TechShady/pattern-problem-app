@@ -142,7 +142,7 @@ export function ChattyAPIs() {
     {
       id: "callerService", header: "Caller Service", accessor: "callerService", width: 250,
       cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     { id: "distinctTargets", header: "Distinct Endpoints", accessor: "distinctTargets", width: 120 },
@@ -265,7 +265,7 @@ export function ChattyAPIs() {
               return (
                 <div key={i} style={{ marginBottom: 8 }}>
                   <Flex justifyContent="space-between" style={{ marginBottom: 2 }}>
-                    <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.service}</a>
+                    <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.service}</a>
                     <Text style={{ fontSize: 12, fontWeight: 600 }}>{svc.totalCalls.toLocaleString()} calls</Text>
                   </Flex>
                   <div style={{ height: 6, borderRadius: 3, background: "rgba(128,128,128,0.1)" }}>

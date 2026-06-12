@@ -133,7 +133,7 @@ export function SlowConsumers() {
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 200,
       cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     {
@@ -284,7 +284,7 @@ export function SlowConsumers() {
             {longTailData.slice(0, 15).map((span, i) => (
               <Flex key={i} justifyContent="space-between" alignItems="center" style={{ padding: "6px 0", borderBottom: "1px solid rgba(128,128,128,0.06)" }}>
                 <Flex gap={8} alignItems="center" style={{ flex: 1, minWidth: 0 }}>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(span.serviceName)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>{span.serviceName}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(span.serviceName)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>{span.serviceName}</a>
                   <Text style={{ fontSize: 11, opacity: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{span.spanName}</Text>
                 </Flex>
                 <Flex gap={8} alignItems="center">
