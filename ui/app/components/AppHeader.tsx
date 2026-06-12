@@ -7,6 +7,7 @@ import { Sheet } from "@dynatrace/strato-components/overlays";
 import { AIInsightsButton } from "./AIInsights";
 import { useTimeframe, TIMEFRAME_OPTIONS } from "../TimeframeContext";
 import { HelpContent } from "./HelpContent";
+import appConfig from "../../../app.config.json";
 
 interface AppHeaderProps {
   aiOpen: boolean;
@@ -22,7 +23,7 @@ export function AppHeader({ aiOpen, onAiToggle }: AppHeaderProps) {
       <div className="pp-header">
         <div className="pp-header-left">
           <Heading level={4} style={{ margin: 0 }}>Pattern Problems</Heading>
-          <Text style={{ fontSize: 11, opacity: 0.4, fontFamily: "monospace" }}>v1.0.0</Text>
+          <Text style={{ fontSize: 11, opacity: 0.4, fontFamily: "monospace" }}>v{appConfig.app.version}</Text>
         </div>
         <div className="pp-header-right">
           <Select

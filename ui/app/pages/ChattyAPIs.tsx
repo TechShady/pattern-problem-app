@@ -1,22 +1,42 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
+import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Text, Strong } from "@dynatrace/strato-components/typography";
 import { ProgressBar } from "@dynatrace/strato-components/content";
 import { DataTable } from "@dynatrace/strato-components-preview/tables";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
-import { useTimeframe } from "../TimeframeContext";
+import { KpiCard, ForecastProvider } from "../components/KpiCard";
+import { ForecastModal } from "../components/ForecastModal";
+import { useTimeframe, getBinSize } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
+
+let ENV_URL = "";
+try { ENV_URL = getEnvironmentUrl(); } catch { /* dev fallback */ }
 
 export function ChattyAPIs() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
+  const [forecastState, setForecastState] = useState<{ label: string; sparkline: number[]; color?: string } | null>(null);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
+  const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
+    setForecastState({ label, sparkline, color });
+  }, []);
 
   const tf = `from: ${timeframe.from}`;
+  const binSize = getBinSize(timeframe.from);
+
+  // Compute previous period
+  const prevTf = useMemo(() => {
+    const match = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+    if (!match) return null;
+    const num = parseInt(match[1]);
+    const unit = match[2];
+    return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
+  }, [timeframe.from]);
 
   // Chatty APIs: services with high fan-out per trace (many spans in a single trace)
   const chattyQuery = `fetch spans, ${tf}
@@ -43,6 +63,30 @@ export function ChattyAPIs() {
   const chattyResult = useDql({ query: chattyQuery });
   const summaryResult = useDql({ query: chattySummaryQuery });
 
+  // Sparkline: chatty patterns over time
+  const sparklineQuery = `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd caller_service = entityName(dt.entity.service),
+            trace_id = toString(trace.id)
+| summarize call_count = count(), by: { caller_service, trace_id, timeframe = bin(end_time, ${binSize}) }
+| filter call_count > 20
+| summarize chatty_traces = count(), total_calls = sum(call_count), by: { timeframe }
+| sort timeframe`;
+
+  // Previous period aggregates
+  const prevQuery = prevTf ? `fetch spans, ${prevTf}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd caller_service = entityName(dt.entity.service),
+            trace_id = toString(trace.id)
+| summarize call_count = count(),
+            distinct_targets = countDistinctExact(span.name),
+            by: { caller_service, trace_id }
+| filter call_count > 20
+| summarize chatty_traces = count(), chatty_services = countDistinct(caller_service), max_fan_out = max(call_count)` : null;
+
+  const sparklineResult = useDql({ query: sparklineQuery });
+  const prevResult = useDql({ query: prevQuery ?? "fetch spans, from: now()-1s | limit 0" });
+
   const chattyData = useMemo(() => {
     if (!chattyResult.data?.records) return [];
     return chattyResult.data.records.map((r: any) => ({
@@ -62,6 +106,25 @@ export function ChattyAPIs() {
     }));
   }, [summaryResult.data]);
 
+  const sparklines = useMemo(() => {
+    const records = sparklineResult.data?.records;
+    if (!records || records.length < 2) return { chattyTraces: [] as number[], totalCalls: [] as number[] };
+    return {
+      chattyTraces: records.map((r: any) => Number(r.chatty_traces ?? 0)),
+      totalCalls: records.map((r: any) => Number(r.total_calls ?? 0)),
+    };
+  }, [sparklineResult.data]);
+
+  const prev = useMemo(() => {
+    const rec = prevResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return {
+      chattyTraces: Number(rec.chatty_traces ?? 0),
+      chattyServices: Number(rec.chatty_services ?? 0),
+      maxFanOut: Number(rec.max_fan_out ?? 0),
+    };
+  }, [prevResult.data, prevTf]);
+
   const columns = useMemo(() => [
     {
       id: "callCount",
@@ -76,9 +139,23 @@ export function ChattyAPIs() {
         }}>{value}</span>
       ),
     },
-    { id: "callerService", header: "Caller Service", accessor: "callerService", width: 250 },
+    {
+      id: "callerService", header: "Caller Service", accessor: "callerService", width: 250,
+      cell: ({ value }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      ),
+    },
     { id: "distinctTargets", header: "Distinct Endpoints", accessor: "distinctTargets", width: 120 },
-    { id: "traceId", header: "Trace ID", accessor: "traceId", width: 250 },
+    {
+      id: "traceId", header: "Trace ID", accessor: "traceId", width: 120,
+      cell: ({ value }: any) => (
+        value ? (
+          <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?traceId=${value}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", fontSize: 12 }}>
+            {value.slice(0, 8)}…
+          </a>
+        ) : <span>—</span>
+      ),
+    },
   ], []);
 
   const analyzeChat = useCallback((): AIInsightsData => {
@@ -129,6 +206,7 @@ export function ChattyAPIs() {
 
   return (
     <AIInsightsContext.Provider value={aiCtx}>
+      <ForecastProvider value={openForecast}>
       <AppHeader aiOpen={aiOpen} onAiToggle={() => setAiOpen(v => !v)} />
 
       <div className="pp-intro-banner">
@@ -140,6 +218,37 @@ export function ChattyAPIs() {
       </div>
 
       {aiPanel}
+
+      {/* KPI cards */}
+      <div className="pp-kpi-grid" style={{ marginBottom: 20 }}>
+        <KpiCard
+          label="Chatty Traces"
+          value={chattyData.length}
+          rawValue={chattyData.length}
+          prevRawValue={prev?.chattyTraces ?? null}
+          sparkline={sparklines.chattyTraces}
+          color={chattyData.length > 20 ? "#C21930" : "#FF832B"}
+          isLoading={chattyResult.isLoading || sparklineResult.isLoading}
+        />
+        <KpiCard
+          label="Chatty Services"
+          value={summaryData.length}
+          rawValue={summaryData.length}
+          prevRawValue={prev?.chattyServices ?? null}
+          sparkline={sparklines.chattyTraces}
+          color="#4589FF"
+          isLoading={summaryResult.isLoading}
+        />
+        <KpiCard
+          label="Worst Fan-Out"
+          value={chattyData.length > 0 ? `${chattyData[0].callCount} calls` : "—"}
+          rawValue={chattyData.length > 0 ? chattyData[0].callCount : undefined}
+          prevRawValue={prev?.maxFanOut ?? null}
+          sparkline={sparklines.totalCalls}
+          color="#C21930"
+          isLoading={chattyResult.isLoading}
+        />
+      </div>
 
       {/* Summary by service */}
       <div className="pp-chart-card" style={{ marginBottom: 20 }}>
@@ -156,7 +265,7 @@ export function ChattyAPIs() {
               return (
                 <div key={i} style={{ marginBottom: 8 }}>
                   <Flex justifyContent="space-between" style={{ marginBottom: 2 }}>
-                    <Text style={{ fontSize: 12 }}>{svc.service}</Text>
+                    <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.service}</a>
                     <Text style={{ fontSize: 12, fontWeight: 600 }}>{svc.totalCalls.toLocaleString()} calls</Text>
                   </Flex>
                   <div style={{ height: 6, borderRadius: 3, background: "rgba(128,128,128,0.1)" }}>
@@ -183,6 +292,15 @@ export function ChattyAPIs() {
           </DataTable>
         )}
       </div>
+      {forecastState && (
+        <ForecastModal
+          label={forecastState.label}
+          sparkline={forecastState.sparkline}
+          color={forecastState.color}
+          onClose={() => setForecastState(null)}
+        />
+      )}
+      </ForecastProvider>
     </AIInsightsContext.Provider>
   );
 }

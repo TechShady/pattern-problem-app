@@ -71,7 +71,11 @@ export function NPlus1Details() {
         }}>{value?.toLocaleString()}</span>
       ),
     },
-    { id: "serviceName", header: "Service", accessor: "serviceName", width: 180 },
+    { id: "serviceName", header: "Service", accessor: "serviceName", width: 180,
+      cell: ({ value, row }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services${row.entityId ? `/ui/entity/${row.entityId}` : `?serviceFilterByName=${encodeURIComponent(value)}`}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      ),
+    },
     { id: "endpoint", header: "Endpoint", accessor: "endpoint", width: 200 },
     { id: "query", header: "Query", accessor: "query", width: 400 },
     { id: "db", header: "Database", accessor: "db", width: 100 },

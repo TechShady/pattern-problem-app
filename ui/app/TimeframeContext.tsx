@@ -38,3 +38,20 @@ export const TIMEFRAME_OPTIONS: { label: string; from: string; to: string }[] = 
   { label: "Last 14 days", from: "now()-14d", to: "now()" },
   { label: "Last 30 days", from: "now()-30d", to: "now()" },
 ];
+
+/** Compute an appropriate DQL bin size string based on the selected timeframe */
+export function getBinSize(from: string): string {
+  const match = from.match(/now\(\)-(\d+)([hdm])/);
+  if (!match) return "1h";
+  const num = parseInt(match[1]);
+  const unit = match[2];
+  const hours = unit === "d" ? num * 24 : unit === "h" ? num : num / 60;
+  if (hours <= 2) return "5m";
+  if (hours <= 6) return "15m";
+  if (hours <= 12) return "30m";
+  if (hours <= 24) return "1h";
+  if (hours <= 72) return "3h";
+  if (hours <= 168) return "6h";
+  if (hours <= 336) return "12h";
+  return "1d";
+}

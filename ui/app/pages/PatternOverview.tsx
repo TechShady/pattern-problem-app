@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
+import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Text, Paragraph, Strong } from "@dynatrace/strato-components/typography";
 import { ProgressBar } from "@dynatrace/strato-components/content";
@@ -7,9 +8,12 @@ import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
-import { useTimeframe } from "../TimeframeContext";
+import { useTimeframe, getBinSize } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
+
+let ENV_URL = "";
+try { ENV_URL = getEnvironmentUrl(); } catch { /* dev fallback */ }
 
 export function PatternOverview() {
   const { timeframe } = useTimeframe();
@@ -78,9 +82,11 @@ export function PatternOverview() {
 | limit 10`;
 
   // Sparkline: N+1 span count bucketed over time
+  const binSize = getBinSize(timeframe.from);
   const sparklineQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| makeTimeseries n1_count = count(), total_queries = sum(aggregation.count), avg_per_span = avg(toDouble(aggregation.count)), max_per_span = max(aggregation.count), interval: auto`;
+| summarize n1_count = count(), total_queries = sum(aggregation.count), avg_per_span = avg(toDouble(aggregation.count)), max_per_span = max(aggregation.count), by:{timeframe = bin(end_time, ${binSize})}
+| sort timeframe`;
 
   // Previous period aggregate (for trend arrows)
   const prevQuery = prevTf ? `fetch spans, ${prevTf}
@@ -103,10 +109,10 @@ export function PatternOverview() {
   const sparklineResult = useDql({ query: sparklineQuery });
   const prevResult = useDql({ query: prevQuery ?? "fetch spans, from: now()-1s | limit 0" });
 
-  // Extract sparkline arrays from timeseries result (makeTimeseries returns one record per bucket)
+  // Extract sparkline arrays from timeseries result
   const sparklines = useMemo(() => {
     const records = sparklineResult.data?.records;
-    if (!records || records.length === 0) return { n1Count: [], totalQueries: [], avgPerSpan: [], maxPerSpan: [] };
+    if (!records || records.length < 2) return { n1Count: [] as number[], totalQueries: [] as number[], avgPerSpan: [] as number[], maxPerSpan: [] as number[] };
     return {
       n1Count: records.map((r: any) => Number(r.n1_count ?? 0)),
       totalQueries: records.map((r: any) => Number(r.total_queries ?? 0)),
@@ -302,6 +308,7 @@ export function PatternOverview() {
               value={reduction ? `${reduction.percentage.toFixed(1)}%` : "—"}
               rawValue={reduction?.percentage ?? undefined}
               prevRawValue={prev?.reductionPct ?? null}
+              sparkline={sparklines.n1Count.length > 0 ? sparklines.n1Count.map((n1: number, i: number) => sparklines.totalQueries[i] > 0 ? (n1 / sparklines.totalQueries[i]) * 100 : 0) : undefined}
               color={(reduction?.percentage ?? 0) > 30 ? "#C21930" : "#FF832B"}
             />
             <KpiCard
@@ -309,7 +316,7 @@ export function PatternOverview() {
               value={reduction?.count.toLocaleString() ?? "—"}
               rawValue={reduction?.count ?? undefined}
               prevRawValue={prev?.reducible ?? null}
-              sparkline={sparklines.totalQueries.length > 0 ? sparklines.totalQueries.map((v, i) => v - sparklines.n1Count[i]) : undefined}
+              sparkline={sparklines.totalQueries.length > 0 ? sparklines.totalQueries.map((v: number, i: number) => v - sparklines.n1Count[i]) : undefined}
               color={(reduction?.count ?? 0) > 1000 ? "#C21930" : "#FF832B"}
             />
           </div>
@@ -328,7 +335,7 @@ export function PatternOverview() {
                     return (
                       <div key={i} style={{ marginBottom: 8 }}>
                         <Flex justifyContent="space-between" style={{ marginBottom: 2 }}>
-                          <Text style={{ fontSize: 12 }}>{svc.name}</Text>
+                          <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(svc.name)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.name}</a>
                           <Text style={{ fontSize: 12, fontWeight: 600 }}>{svc.count.toLocaleString()}</Text>
                         </Flex>
                         <div style={{ height: 6, borderRadius: 3, background: "rgba(128,128,128,0.1)" }}>

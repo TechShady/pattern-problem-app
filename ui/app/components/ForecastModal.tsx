@@ -107,11 +107,294 @@ function movingAverage(data: number[]): { forecast: number[]; confidence: number
   return { forecast, confidence };
 }
 
+// ─── Helper: detect dominant season length via autocorrelation ───
+function detectSeasonLength(data: number[]): number {
+  const n = data.length;
+  if (n < 8) return 0;
+  const mean = data.reduce((a, b) => a + b, 0) / n;
+  const centered = data.map((v) => v - mean);
+  const maxLag = Math.floor(n / 2);
+  const acf: number[] = [];
+  const variance = centered.reduce((a, v) => a + v * v, 0);
+  if (variance === 0) return 0;
+  for (let lag = 0; lag <= maxLag; lag++) {
+    let sum = 0;
+    for (let i = 0; i < n - lag; i++) sum += centered[i] * centered[i + lag];
+    acf.push(sum / variance);
+  }
+  let bestLag = 0, bestVal = -Infinity;
+  for (let lag = 2; lag < acf.length; lag++) {
+    if (acf[lag] > bestVal && acf[lag] > acf[lag - 1] && (lag === acf.length - 1 || acf[lag] >= acf[lag + 1])) {
+      bestVal = acf[lag]; bestLag = lag; break;
+    }
+  }
+  return bestVal > 0.1 ? bestLag : Math.min(24, Math.floor(n / 4));
+}
+
+// ─── Helper: fit AR coefficients via Yule-Walker ───
+function fitAR(data: number[], order: number): number[] {
+  const n = data.length;
+  if (n <= order) return new Array(order).fill(0);
+  const mean = data.reduce((a, b) => a + b, 0) / n;
+  const centered = data.map((v) => v - mean);
+  const r: number[] = new Array(order + 1).fill(0);
+  for (let lag = 0; lag <= order; lag++) { for (let i = 0; i < n - lag; i++) r[lag] += centered[i] * centered[i + lag]; r[lag] /= n; }
+  if (r[0] === 0) return new Array(order).fill(0);
+  const coeffs: number[] = new Array(order).fill(0);
+  const prevCoeffs: number[] = new Array(order).fill(0);
+  coeffs[0] = r[1] / r[0];
+  let err = r[0] * (1 - coeffs[0] * coeffs[0]);
+  for (let m = 1; m < order; m++) {
+    let lambda = r[m + 1];
+    for (let j = 0; j < m; j++) lambda -= coeffs[j] * r[m - j];
+    if (Math.abs(err) < 1e-12) break;
+    const k = lambda / err;
+    for (let j = 0; j < m; j++) prevCoeffs[j] = coeffs[j];
+    coeffs[m] = k;
+    for (let j = 0; j < m; j++) coeffs[j] = prevCoeffs[j] - k * prevCoeffs[m - 1 - j];
+    err *= 1 - k * k;
+    if (err <= 0) break;
+  }
+  return coeffs;
+}
+
+function fitMA(residuals: number[], order: number): number[] {
+  const n = residuals.length;
+  if (n <= order) return new Array(order).fill(0);
+  const mean = residuals.reduce((a, b) => a + b, 0) / n;
+  const centered = residuals.map((v) => v - mean);
+  let r0 = 0;
+  for (let i = 0; i < n; i++) r0 += centered[i] * centered[i];
+  if (r0 === 0) return new Array(order).fill(0);
+  const coeffs: number[] = [];
+  for (let lag = 1; lag <= order; lag++) {
+    let rk = 0;
+    for (let i = lag; i < n; i++) rk += centered[i] * centered[i - lag];
+    coeffs.push(Math.max(-0.9, Math.min(0.9, rk / r0)));
+  }
+  return coeffs;
+}
+
+function fitSeasonalAR(data: number[], order: number, season: number): number[] {
+  const n = data.length;
+  if (n <= order * season) return new Array(order).fill(0);
+  const mean = data.reduce((a, b) => a + b, 0) / n;
+  const centered = data.map((v) => v - mean);
+  const coeffs: number[] = [];
+  for (let j = 0; j < order; j++) {
+    const lag = (j + 1) * season;
+    if (lag >= n) { coeffs.push(0); continue; }
+    let num = 0, den = 0;
+    for (let i = lag; i < n; i++) { num += centered[i] * centered[i - lag]; den += centered[i - lag] * centered[i - lag]; }
+    coeffs.push(den !== 0 ? num / den : 0);
+  }
+  return coeffs;
+}
+
+function fitSeasonalMA(residuals: number[], order: number, season: number): number[] {
+  const n = residuals.length;
+  if (n <= order * season) return new Array(order).fill(0);
+  const mean = residuals.reduce((a, b) => a + b, 0) / n;
+  const centered = residuals.map((v) => v - mean);
+  let r0 = 0;
+  for (let i = 0; i < n; i++) r0 += centered[i] * centered[i];
+  if (r0 === 0) return new Array(order).fill(0);
+  const coeffs: number[] = [];
+  for (let j = 0; j < order; j++) {
+    const lag = (j + 1) * season;
+    if (lag >= n) { coeffs.push(0); continue; }
+    let rk = 0;
+    for (let i = lag; i < n; i++) rk += centered[i] * centered[i - lag];
+    coeffs.push(Math.max(-0.9, Math.min(0.9, rk / r0)));
+  }
+  return coeffs;
+}
+
+// ─── Prophet-style forecast (piecewise linear trend + Fourier seasonality) ───
+function prophetForecast(data: number[]): { forecast: number[]; confidence: number[] } {
+  const n = data.length;
+  const forecastLen = Math.max(Math.round(n * 0.4), 6);
+  if (n < 4) return linearRegression(data);
+  // Piecewise trend
+  const numCp = Math.min(Math.max(2, Math.floor(n / 10)), 25);
+  const cpIndices: number[] = [];
+  for (let i = 1; i <= numCp; i++) cpIndices.push(Math.round((i / (numCp + 1)) * n * 0.8));
+  const breakpoints = [0, ...cpIndices, n - 1];
+  const trend: number[] = new Array(n).fill(0);
+  for (let seg = 0; seg < breakpoints.length - 1; seg++) {
+    const start = breakpoints[seg], end = breakpoints[seg + 1];
+    if (end <= start) continue;
+    for (let i = start; i <= end; i++) trend[i] = data[start] + ((i - start) / (end - start)) * (data[end] - data[start]);
+  }
+  // Smooth trend
+  const windowSize = Math.max(3, Math.floor(n / 20));
+  const smoothed: number[] = [...trend];
+  for (let i = 0; i < n; i++) {
+    let sum = 0, count = 0;
+    for (let j = Math.max(0, i - windowSize); j <= Math.min(n - 1, i + windowSize); j++) { sum += trend[j]; count++; }
+    smoothed[i] = sum / count;
+  }
+  // Fourier seasonality
+  const detrended = data.map((v, i) => v - smoothed[i]);
+  const period = detectSeasonLength(detrended) || Math.min(n, 24);
+  const numHarmonics = Math.min(4, Math.floor(period / 2));
+  const coeffs: { a: number; b: number; freq: number }[] = [];
+  for (let h = 1; h <= numHarmonics; h++) {
+    const freq = (2 * Math.PI * h) / period;
+    let sumCos = 0, sumSin = 0;
+    for (let i = 0; i < n; i++) { sumCos += detrended[i] * Math.cos(freq * i); sumSin += detrended[i] * Math.sin(freq * i); }
+    coeffs.push({ a: (2 * sumCos) / n, b: (2 * sumSin) / n, freq });
+  }
+  const lastSlope = n >= 2 ? (smoothed[n - 1] - smoothed[n - 2]) : 0;
+  const lastLevel = smoothed[n - 1];
+  let sse = 0;
+  for (let i = 0; i < n; i++) {
+    let s = 0; for (const c of coeffs) s += c.a * Math.cos(c.freq * i) + c.b * Math.sin(c.freq * i);
+    sse += (data[i] - (smoothed[i] + s)) ** 2;
+  }
+  const std = Math.sqrt(sse / n);
+  const forecast: number[] = [];
+  const confidence: number[] = [];
+  for (let i = 0; i < forecastLen; i++) {
+    let s = 0; for (const c of coeffs) s += c.a * Math.cos(c.freq * (n + i)) + c.b * Math.sin(c.freq * (n + i));
+    forecast.push(Math.max(0, lastLevel + lastSlope * (i + 1) + s));
+    confidence.push(std * (1 + 0.1 * i));
+  }
+  return { forecast, confidence };
+}
+
+// ─── ARIMA(p, d, q) forecast ───
+function arimaForecast(data: number[]): { forecast: number[]; confidence: number[] } {
+  const n = data.length;
+  const p = 5, d = 1, q = 2;
+  const forecastLen = Math.max(Math.round(n * 0.4), 6);
+  if (n < p + d + 2) return linearRegression(data);
+  // Difference
+  let diffed = [...data];
+  const diffHistory: number[][] = [];
+  for (let dd = 0; dd < d; dd++) {
+    diffHistory.push([...diffed]);
+    const newDiff: number[] = [];
+    for (let i = 1; i < diffed.length; i++) newDiff.push(diffed[i] - diffed[i - 1]);
+    diffed = newDiff;
+  }
+  const arCoeffs = fitAR(diffed, p);
+  const residuals: number[] = new Array(diffed.length).fill(0);
+  for (let i = p; i < diffed.length; i++) {
+    let predicted = 0;
+    for (let j = 0; j < p; j++) predicted += arCoeffs[j] * diffed[i - j - 1];
+    residuals[i] = diffed[i] - predicted;
+  }
+  const maCoeffs = fitMA(residuals, q);
+  const extended = [...diffed];
+  const extResiduals = [...residuals];
+  for (let i = 0; i < forecastLen; i++) {
+    let fc = 0;
+    for (let j = 0; j < p; j++) { const idx = extended.length - j - 1; if (idx >= 0) fc += arCoeffs[j] * extended[idx]; }
+    for (let j = 0; j < q; j++) { const idx = extResiduals.length - j - 1; if (idx >= 0) fc += maCoeffs[j] * extResiduals[idx]; }
+    extended.push(fc);
+    extResiduals.push(0);
+  }
+  // Integrate back
+  let result = extended.slice(diffed.length);
+  for (let dd = d - 1; dd >= 0; dd--) {
+    const prev = diffHistory[dd];
+    const integrated: number[] = [];
+    let lastVal = prev[prev.length - 1];
+    for (let i = 0; i < result.length; i++) { lastVal = lastVal + result[i]; integrated.push(lastVal); }
+    result = integrated;
+  }
+  // Confidence
+  const mean = data.reduce((a, b) => a + b, 0) / n;
+  const variance = data.reduce((a, v) => a + (v - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance);
+  const forecast = result.map((v) => Math.max(0, v));
+  const confidence = forecast.map((_, i) => std * (1 + 0.12 * i));
+  return { forecast, confidence };
+}
+
+// ─── SARIMA(p, d, q)(P, D, Q, m) forecast ───
+function sarimaForecast(data: number[]): { forecast: number[]; confidence: number[] } {
+  const n = data.length;
+  const p = 3, d = 1, q = 1, P = 1, D = 1, Q = 1;
+  const forecastLen = Math.max(Math.round(n * 0.4), 6);
+  const season = detectSeasonLength(data) || Math.min(Math.max(4, Math.floor(n / 4)), 12);
+  if (n < season * 2 + p + d) return arimaForecast(data);
+  // Seasonal difference
+  let diffed = [...data];
+  const sDiffHistory: number[][] = [];
+  for (let dd = 0; dd < D; dd++) {
+    sDiffHistory.push([...diffed]);
+    const newDiff: number[] = [];
+    for (let i = season; i < diffed.length; i++) newDiff.push(diffed[i] - diffed[i - season]);
+    diffed = newDiff;
+  }
+  // Regular difference
+  const rDiffHistory: number[][] = [];
+  for (let dd = 0; dd < d; dd++) {
+    rDiffHistory.push([...diffed]);
+    const newDiff: number[] = [];
+    for (let i = 1; i < diffed.length; i++) newDiff.push(diffed[i] - diffed[i - 1]);
+    diffed = newDiff;
+  }
+  const arCoeffs = fitAR(diffed, p);
+  const sarCoeffs = fitSeasonalAR(diffed, P, season);
+  const residuals: number[] = new Array(diffed.length).fill(0);
+  const startIdx = Math.max(p, P * season);
+  for (let i = startIdx; i < diffed.length; i++) {
+    let predicted = 0;
+    for (let j = 0; j < p; j++) predicted += arCoeffs[j] * diffed[i - j - 1];
+    for (let j = 0; j < P; j++) { const idx = i - (j + 1) * season; if (idx >= 0) predicted += sarCoeffs[j] * diffed[idx]; }
+    residuals[i] = diffed[i] - predicted;
+  }
+  const maCoeffs = fitMA(residuals, q);
+  const smaCoeffs = fitSeasonalMA(residuals, Q, season);
+  const extended = [...diffed];
+  const extResiduals = [...residuals];
+  for (let i = 0; i < forecastLen; i++) {
+    let fc = 0;
+    for (let j = 0; j < p; j++) { const idx = extended.length - j - 1; if (idx >= 0) fc += arCoeffs[j] * extended[idx]; }
+    for (let j = 0; j < P; j++) { const idx = extended.length - (j + 1) * season; if (idx >= 0) fc += sarCoeffs[j] * extended[idx]; }
+    for (let j = 0; j < q; j++) { const idx = extResiduals.length - j - 1; if (idx >= 0) fc += maCoeffs[j] * extResiduals[idx]; }
+    for (let j = 0; j < Q; j++) { const idx = extResiduals.length - (j + 1) * season; if (idx >= 0) fc += smaCoeffs[j] * extResiduals[idx]; }
+    extended.push(fc);
+    extResiduals.push(0);
+  }
+  // Integrate regular difference
+  let result = extended.slice(diffed.length);
+  for (let dd = d - 1; dd >= 0; dd--) {
+    const prev = rDiffHistory[dd];
+    const integrated: number[] = [];
+    let lastVal = prev[prev.length - 1];
+    for (let i = 0; i < result.length; i++) { lastVal = lastVal + result[i]; integrated.push(lastVal); }
+    result = integrated;
+  }
+  // Integrate seasonal difference
+  for (let dd = D - 1; dd >= 0; dd--) {
+    const prev = sDiffHistory[dd];
+    const integrated: number[] = [];
+    for (let i = 0; i < result.length; i++) {
+      const base = i < season ? prev[prev.length - season + i] : integrated[i - season];
+      integrated.push(base + result[i]);
+    }
+    result = integrated;
+  }
+  // Confidence
+  const mean = data.reduce((a, b) => a + b, 0) / n;
+  const variance = data.reduce((a, v) => a + (v - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance);
+  const forecast = result.map((v) => Math.max(0, v));
+  const confidence = forecast.map((_, i) => std * (1 + 0.1 * i));
+  return { forecast, confidence };
+}
+
 const METHODS: Record<string, { label: string; fn: (d: number[]) => { forecast: number[]; confidence: number[] } }> = {
+  holt: { label: "Holt-Winters (Double Exp.)", fn: holtWinters },
+  triple: { label: "Triple Exp. Smoothing", fn: tripleExponential },
+  prophet: { label: "Prophet", fn: prophetForecast },
+  arima: { label: "ARIMA", fn: arimaForecast },
+  sarima: { label: "SARIMA", fn: sarimaForecast },
   linear: { label: "Linear Regression", fn: linearRegression },
-  holt: { label: "Holt-Winters", fn: holtWinters },
-  triple: { label: "Triple Exponential", fn: tripleExponential },
-  ma: { label: "Moving Average", fn: movingAverage },
 };
 
 // ─── Correlated Metrics Helper ───

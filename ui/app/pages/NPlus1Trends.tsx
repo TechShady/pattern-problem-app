@@ -15,6 +15,7 @@ export function NPlus1Trends() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
   const [scatterMaximized, setScatterMaximized] = useState(false);
+  const [heatmapMode, setHeatmapMode] = useState(false);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; data: any } | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const closeAi = useCallback(() => setAiOpen(false), []);
@@ -31,10 +32,13 @@ export function NPlus1Trends() {
     return `from: now()-${num * 2}${unit}, to: now()-${num}${unit}`;
   }, [timeframe.from]);
 
-  // Scatter: N+1 spans plotted over time (no sort = DQL returns spread across full timeframe)
+  // Scatter: N+1 spans plotted over time, sampled across full timeframe
+  // Match dashboard query: sort by count desc to get highest-impact spans spread across timeframe
   const scatterQuery = `fetch spans, ${tf}
-| filter db.system != "null" and aggregation.count > 1
-| fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system`;
+| filter db.system != "null" and aggregation.count > 10
+| fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
+| sort aggregation.count desc
+| limit 5000`;
 
   // Estimated annual projection (weekly * 52)
   const annualQuery = `fetch spans, from: now()-7d
@@ -46,12 +50,19 @@ export function NPlus1Trends() {
   // Previous period counts for comparison
   const prevCountQuery = prevTf ? `fetch spans, ${prevTf}
 | filter db.system != "null" and aggregation.count > 1
-| summarize total = count(), high_impact = countif(aggregation.count > 50)
-| fieldsAdd services = count()` : null;
+| summarize total = count(), high_impact = countif(aggregation.count > 50), distinct_services = countDistinct(dt.entity.service)` : null;
 
-  const scatterResult = useDql({ query: scatterQuery });
+  // Previous period annual estimate
+  const prevAnnualQuery = prevTf ? `fetch spans, ${prevTf}
+| filter db.system != "null"
+| summarize c=count(), s= sum(aggregation.count),
+            c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
+| fieldsAdd queryReduction = (toDouble(s1)-toDouble(c1))*52` : null;
+
+  const scatterResult = useDql({ query: scatterQuery, maxResultRecords: 5000 });
   const annualResult = useDql({ query: annualQuery });
   const prevCountResult = useDql({ query: prevCountQuery ?? "fetch spans, from: now()-1s | limit 0" });
+  const prevAnnualResult = useDql({ query: prevAnnualQuery ?? "fetch spans, from: now()-1s | limit 0" });
 
   const scatterData = useMemo(() => {
     if (!scatterResult.data?.records) return [];
@@ -74,8 +85,15 @@ export function NPlus1Trends() {
     return {
       total: Number(rec.total ?? 0),
       highImpact: Number(rec.high_impact ?? 0),
+      distinctServices: Number(rec.distinct_services ?? 0),
     };
   }, [prevCountResult.data, prevTf]);
+
+  const prevAnnualEstimate = useMemo(() => {
+    const rec = prevAnnualResult.data?.records?.[0] as any;
+    if (!rec || !prevTf) return null;
+    return Number(rec.queryReduction ?? 0);
+  }, [prevAnnualResult.data, prevTf]);
 
   const maxScatterCount = useMemo(() => Math.max(...scatterData.map(d => d.count), 1), [scatterData]);
 
@@ -128,19 +146,21 @@ export function NPlus1Trends() {
 
   // Build sparklines from scatter data (bucket by time)
   const trendSparklines = useMemo(() => {
-    if (scatterData.length < 2) return { counts: [], highImpact: [] };
+    if (scatterData.length < 2) return { counts: [], highImpact: [], services: [] };
     const minT = Math.min(...scatterData.map(d => d.time));
     const maxT = Math.max(...scatterData.map(d => d.time));
     const bucketCount = 16;
     const bucketMs = (maxT - minT) / bucketCount || 1;
     const counts = new Array(bucketCount).fill(0);
     const highImpact = new Array(bucketCount).fill(0);
+    const serviceSets: Set<string>[] = Array.from({ length: bucketCount }, () => new Set());
     for (const d of scatterData) {
       const idx = Math.min(Math.floor((d.time - minT) / bucketMs), bucketCount - 1);
       counts[idx] += d.count;
       if (d.count > 50) highImpact[idx]++;
+      serviceSets[idx].add(d.service);
     }
-    return { counts, highImpact };
+    return { counts, highImpact, services: serviceSets.map(s => s.size) };
   }, [scatterData]);
 
   return (
@@ -155,8 +175,10 @@ export function NPlus1Trends() {
           label="Est. Unnecessary Queries / Year"
           value={annualEstimate !== null ? annualEstimate.toLocaleString() : "—"}
           rawValue={annualEstimate ?? undefined}
+          prevRawValue={prevAnnualEstimate ?? null}
           sparkline={trendSparklines.counts}
           color="#C21930"
+          isLoading={annualResult.isLoading}
         />
         <KpiCard
           label="High-Impact Spans (>50 queries)"
@@ -165,12 +187,17 @@ export function NPlus1Trends() {
           prevRawValue={prevCounts?.highImpact ?? null}
           sparkline={trendSparklines.highImpact}
           color="#FF832B"
+          isLoading={scatterResult.isLoading}
         />
         <KpiCard
           label="Affected Services"
           value={new Set(scatterData.map(d => d.service)).size}
           rawValue={new Set(scatterData.map(d => d.service)).size}
+          prevRawValue={prevCounts?.distinctServices ?? null}
+          sparkline={trendSparklines.services}
           color="#4589FF"
+          higherIsBetter
+          isLoading={scatterResult.isLoading}
         />
       </div>
 
@@ -180,13 +207,21 @@ export function NPlus1Trends() {
         ...(scatterMaximized ? { position: "fixed", inset: 0, zIndex: 99999, margin: 0, borderRadius: 0, overflow: "auto", background: "var(--dt-colors-surface-default, #1a1e38)" } : {}),
       }}>
         <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 8 }}>
-          <div className="pp-chart-title" style={{ margin: 0 }}>N+1 Spans Over Time (Scatter)</div>
-          <button
-            onClick={() => setScatterMaximized(v => !v)}
-            style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "inherit" }}
-          >
-            {scatterMaximized ? "⊟ Minimize" : "⊞ Maximize"}
-          </button>
+          <div className="pp-chart-title" style={{ margin: 0 }}>N+1 Spans Over Time ({heatmapMode ? "Heatmap" : "Scatter"})</div>
+          <Flex gap={6}>
+            <button
+              onClick={() => setHeatmapMode(v => !v)}
+              style={{ background: heatmapMode ? "rgba(69,137,255,0.2)" : "rgba(128,128,128,0.1)", border: `1px solid ${heatmapMode ? "rgba(69,137,255,0.4)" : "rgba(128,128,128,0.2)"}`, borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "inherit" }}
+            >
+              {heatmapMode ? "◉ Heatmap" : "◉ Scatter"}
+            </button>
+            <button
+              onClick={() => setScatterMaximized(v => !v)}
+              style={{ background: "rgba(128,128,128,0.1)", border: "1px solid rgba(128,128,128,0.2)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: "inherit" }}
+            >
+              {scatterMaximized ? "⊟ Minimize" : "⊞ Maximize"}
+            </button>
+          </Flex>
         </Flex>
         {scatterResult.isLoading ? (
           <div className="pp-loading"><ProgressBar style={{ width: 200 }} /></div>
@@ -199,8 +234,14 @@ export function NPlus1Trends() {
             const viewW = 1000;
             const plotW = viewW - padL - padR;
             const plotH = chartH - padT - padB;
-            const minTime = Math.min(...scatterData.map(d => d.time));
-            const maxTime = Math.max(...scatterData.map(d => d.time));
+            // Use timeframe bounds for x-axis (not data bounds) so chart scales to selected window
+            const nowMs = Date.now();
+            const tfMatch = timeframe.from.match(/now\(\)-(\d+)([hdm])/);
+            const tfDurationMs = tfMatch
+              ? parseInt(tfMatch[1]) * ({ h: 3600000, d: 86400000, m: 60000 }[tfMatch[2] as "h"|"d"|"m"] || 3600000)
+              : 7200000;
+            const minTime = nowMs - tfDurationMs;
+            const maxTime = nowMs;
             const timeRange = maxTime - minTime || 1;
             // Y-axis ticks
             const yMax = maxScatterCount;
@@ -286,8 +327,29 @@ export function NPlus1Trends() {
                       </g>
                     );
                   })}
-                  {/* Dots colored by service */}
-                  {scatterData.map((d, i) => {
+                  {/* Dots or Heatmap */}
+                  {heatmapMode ? (() => {
+                    const gridX = 40, gridY = 20;
+                    const cellW = plotW / gridX, cellH = plotH / gridY;
+                    const grid = Array.from({ length: gridX * gridY }, () => 0);
+                    for (const d of scatterData) {
+                      const xi = Math.min(Math.floor(((d.time - minTime) / timeRange) * gridX), gridX - 1);
+                      const yi = Math.min(Math.floor((d.count / yMax) * gridY), gridY - 1);
+                      grid[yi * gridX + xi]++;
+                    }
+                    const maxDensity = Math.max(...grid, 1);
+                    return grid.map((density, idx) => {
+                      if (density === 0) return null;
+                      const xi = idx % gridX, yi = Math.floor(idx / gridX);
+                      const x = padL + xi * cellW;
+                      const y = padT + plotH - (yi + 1) * cellH;
+                      const intensity = density / maxDensity;
+                      const r = Math.round(194 * intensity + 69 * (1 - intensity));
+                      const g = Math.round(25 * intensity + 137 * (1 - intensity));
+                      const b = Math.round(48 * intensity + 255 * (1 - intensity));
+                      return <rect key={idx} x={x} y={y} width={cellW} height={cellH} fill={`rgba(${r},${g},${b},${0.2 + intensity * 0.7})`} />;
+                    });
+                  })() : scatterData.map((d, i) => {
                     const x = padL + ((d.time - minTime) / timeRange) * plotW;
                     const y = padT + plotH - (d.count / yMax) * plotH;
                     const r = Math.min(2 + (d.count / yMax) * 3, 5);

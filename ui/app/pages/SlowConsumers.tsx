@@ -1,15 +1,20 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
+import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Text, Strong } from "@dynatrace/strato-components/typography";
 import { ProgressBar } from "@dynatrace/strato-components/content";
 import { DataTable } from "@dynatrace/strato-components-preview/tables";
 import { AppHeader } from "../components/AppHeader";
 import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
-import { KpiCard } from "../components/KpiCard";
-import { useTimeframe } from "../TimeframeContext";
+import { KpiCard, ForecastProvider } from "../components/KpiCard";
+import { ForecastModal } from "../components/ForecastModal";
+import { useTimeframe, getBinSize } from "../TimeframeContext";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
+
+let ENV_URL = "";
+try { ENV_URL = getEnvironmentUrl(); } catch { /* dev fallback */ }
 
 export function SlowConsumers() {
   const { timeframe } = useTimeframe();
@@ -29,10 +34,12 @@ export function SlowConsumers() {
   }, [timeframe.from]);
 
   // Sparkline: slow consumer count + long-tail count over time
+  const binSize = getBinSize(timeframe.from);
   const sparklineQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd duration_ms = toDouble(duration) / 1000000.0
-| makeTimeseries high_variance_count = countif(duration_ms > 5000), total_spans = count(), avg_duration = avg(duration_ms), interval: auto`;
+| summarize high_variance_count = countif(duration_ms > 5000), total_spans = count(), avg_duration = avg(duration_ms), by:{timeframe = bin(end_time, ${binSize})}
+| sort timeframe`;
 
   // Previous period aggregates
   const prevQuery = prevTf ? `fetch spans, ${prevTf}
@@ -82,7 +89,7 @@ export function SlowConsumers() {
 
   const sparklines = useMemo(() => {
     const records = sparklineResult.data?.records;
-    if (!records || records.length === 0) return { highVariance: [], avgDuration: [] };
+    if (!records || records.length < 2) return { highVariance: [] as number[], avgDuration: [] as number[] };
     return {
       highVariance: records.map((r: any) => Number(r.high_variance_count ?? 0)),
       avgDuration: records.map((r: any) => Number(r.avg_duration ?? 0)),
@@ -123,7 +130,12 @@ export function SlowConsumers() {
   }, [longTailResult.data]);
 
   const columns = useMemo(() => [
-    { id: "serviceName", header: "Service", accessor: "serviceName", width: 200 },
+    {
+      id: "serviceName", header: "Service", accessor: "serviceName", width: 200,
+      cell: ({ value }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      ),
+    },
     {
       id: "varianceRatio",
       header: "Variance Ratio (p99/avg)",
@@ -194,8 +206,14 @@ export function SlowConsumers() {
 
   const { panel: aiPanel } = useAIInsights(analyzeSlowConsumers, aiOpen, closeAi);
 
+  const [forecastState, setForecastState] = useState<{ label: string; sparkline: number[]; color?: string } | null>(null);
+  const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
+    setForecastState({ label, sparkline, color });
+  }, []);
+
   return (
     <AIInsightsContext.Provider value={aiCtx}>
+      <ForecastProvider value={openForecast}>
       <AppHeader aiOpen={aiOpen} onAiToggle={() => setAiOpen(v => !v)} />
 
       <div className="pp-intro-banner">
@@ -217,6 +235,7 @@ export function SlowConsumers() {
           prevRawValue={prev?.highVarServices ?? null}
           sparkline={sparklines.highVariance}
           color={slowData.length > 5 ? "#C21930" : slowData.length > 0 ? "#FF832B" : "#24A148"}
+          isLoading={slowResult.isLoading || sparklineResult.isLoading}
         />
         <KpiCard
           label="Long-Tail Spans (>5s)"
@@ -225,6 +244,7 @@ export function SlowConsumers() {
           prevRawValue={prev?.longTailCount ?? null}
           sparkline={sparklines.highVariance}
           color={longTailData.length > 20 ? "#C21930" : "#FF832B"}
+          isLoading={longTailResult.isLoading}
         />
         <KpiCard
           label="Worst Variance Ratio"
@@ -233,6 +253,7 @@ export function SlowConsumers() {
           prevRawValue={prev?.maxVariance ?? null}
           sparkline={sparklines.avgDuration}
           color="#C21930"
+          isLoading={slowResult.isLoading}
         />
       </div>
 
@@ -263,18 +284,32 @@ export function SlowConsumers() {
             {longTailData.slice(0, 15).map((span, i) => (
               <Flex key={i} justifyContent="space-between" alignItems="center" style={{ padding: "6px 0", borderBottom: "1px solid rgba(128,128,128,0.06)" }}>
                 <Flex gap={8} alignItems="center" style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 12, fontWeight: 600 }}>{span.serviceName}</Text>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.classic.services?serviceFilterByName=${encodeURIComponent(span.serviceName)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>{span.serviceName}</a>
                   <Text style={{ fontSize: 11, opacity: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{span.spanName}</Text>
                 </Flex>
-                <span style={{
-                  padding: "2px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700,
-                  background: "rgba(194,25,48,0.1)", color: "#C21930",
-                }}>{(span.durationMs / 1000).toFixed(1)}s</span>
+                <Flex gap={8} alignItems="center">
+                  {span.traceId && (
+                    <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?traceId=${span.traceId}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", fontSize: 11 }}>trace</a>
+                  )}
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700,
+                    background: "rgba(194,25,48,0.1)", color: "#C21930",
+                  }}>{(span.durationMs / 1000).toFixed(1)}s</span>
+                </Flex>
               </Flex>
             ))}
           </div>
         )}
       </div>
+      {forecastState && (
+        <ForecastModal
+          label={forecastState.label}
+          sparkline={forecastState.sparkline}
+          color={forecastState.color}
+          onClose={() => setForecastState(null)}
+        />
+      )}
+      </ForecastProvider>
     </AIInsightsContext.Provider>
   );
 }

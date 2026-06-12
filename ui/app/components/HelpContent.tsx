@@ -79,6 +79,31 @@ export function HelpContent() {
         experience, and scalability ceilings that limit growth.
       </Paragraph>
 
+      <Heading level={5} style={{ marginTop: 20 }}>KPI Cards & Forecasting</Heading>
+      <Paragraph style={{ marginBottom: 8 }}>
+        Every tab features KPI summary cards with:
+      </Paragraph>
+      <ul style={{ fontSize: 13, lineHeight: 1.8, paddingLeft: 20, opacity: 0.85 }}>
+        <li><Strong>Sparklines:</Strong> Mini trend chart showing metric behavior across the selected timeframe (bin size adapts automatically)</li>
+        <li><Strong>Comparison arrows:</Strong> Green/red delta vs the previous equivalent period (e.g. last 7d vs prior 7d)</li>
+        <li><Strong>Forecast drill-through:</Strong> Click any KPI card to open a forecast modal with 6 algorithms (Linear Regression, Holt-Winters, Triple Exponential, Moving Average, Prophet, ARIMA/SARIMA)</li>
+        <li><Strong>Loading skeletons:</Strong> Cards show a loading state while queries are in-flight</li>
+      </ul>
+
+      <Heading level={5} style={{ marginTop: 20 }}>Scatter Plot & Heatmap</Heading>
+      <Paragraph>
+        The N+1 Trends tab includes a scatter plot of N+1 spans over time. Toggle between
+        <Strong> Scatter</Strong> mode (individual dots colored by service) and <Strong>Heatmap</Strong> mode
+        (2D density grid showing concentration hotspots). Use the Maximize button for full-screen analysis.
+      </Paragraph>
+
+      <Heading level={5} style={{ marginTop: 20 }}>Linked Navigation</Heading>
+      <Paragraph>
+        Service names and trace IDs in all tables are clickable links. Service names open the
+        Dynatrace Services app filtered to that service. Trace IDs open the Distributed Traces
+        explorer for that specific trace. Links open in a new tab.
+      </Paragraph>
+
       <Heading level={5} style={{ marginTop: 20 }}>Resources</Heading>
       <Paragraph>
         <Link href="https://www.youtube.com/watch?v=TJtroXEWf6U" target="_blank">Video: Patterns from Logs & Traces</Link>
