@@ -46,12 +46,13 @@ export function ImpactAnalysis() {
   const serviceImpactQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | fieldsAdd service_name = entityName(dt.entity.service),
+            service_id = toString(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | summarize n1_count = sum(aggregation.count),
             total_duration_ms = sum(duration_ms),
             avg_extra_duration_ms = avg(duration_ms),
             span_count = count(),
-            by: { service_name }
+            by: { service_name, service_id }
 | fieldsAdd estimated_wasted_ms = avg_extra_duration_ms * (toDouble(n1_count) - toDouble(span_count)),
             cost_per_week = (toDouble(n1_count) - toDouble(span_count)) * 0.000005
 | sort estimated_wasted_ms desc
@@ -118,6 +119,7 @@ export function ImpactAnalysis() {
     if (!serviceImpact.data?.records) return [];
     return serviceImpact.data.records.map((r: any) => ({
       service: String(r.service_name ?? "Unknown"),
+      entityId: String(r.service_id ?? ""),
       n1Count: Number(r.n1_count ?? 0),
       totalDurationMs: Number(r.total_duration_ms ?? 0),
       avgExtraDuration: Number(r.avg_extra_duration_ms ?? 0),
@@ -258,7 +260,7 @@ export function ImpactAnalysis() {
                   return (
                     <div key={i} style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(128,128,128,0.08)" }}>
                       <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 4 }}>
-                        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{svc.service}</a>
+                        <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(svc.entityId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{svc.service}</a>
                         <Flex gap={16}>
                           <Text style={{ fontSize: 11, opacity: 0.6 }}>{svc.n1Count.toLocaleString()} queries</Text>
                           <Text style={{ fontSize: 11, opacity: 0.6 }}>{svc.spanCount} spans</Text>

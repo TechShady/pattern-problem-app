@@ -68,8 +68,8 @@ export function PatternOverview() {
   // N+1 services distribution
   const servicesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| fields aggregation.count, service_name = entityName(dt.entity.service)
-| summarize count=sum(aggregation.count), by:{service_name}
+| fields aggregation.count, service_name = entityName(dt.entity.service), service_id = toString(dt.entity.service)
+| summarize count=sum(aggregation.count), by:{service_name, service_id}
 | sort count desc
 | limit 10`;
 
@@ -167,6 +167,7 @@ export function PatternOverview() {
   const servicesList = useMemo(() => {
     return (servicesResult.data?.records ?? []).map((r: any) => ({
       name: String(r.service_name ?? "Unknown"),
+      entityId: String(r.service_id ?? ""),
       count: Number(r.count ?? 0),
     }));
   }, [servicesResult.data]);
@@ -335,7 +336,7 @@ export function PatternOverview() {
                     return (
                       <div key={i} style={{ marginBottom: 8 }}>
                         <Flex justifyContent="space-between" style={{ marginBottom: 2 }}>
-                          <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(svc.name)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.name}</a>
+                          <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(svc.entityId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.name}</a>
                           <Text style={{ fontSize: 12, fontWeight: 600 }}>{svc.count.toLocaleString()}</Text>
                         </Flex>
                         <div style={{ height: 6, borderRadius: 3, background: "rgba(128,128,128,0.1)" }}>

@@ -43,14 +43,15 @@ export function CircularDependencies() {
   const circularQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
+            service_id = toString(dt.entity.service),
             trace_id_str = toString(trace.id)
 | summarize service_appearances = count(),
-            by: { trace_id_str, service_name }
+            by: { trace_id_str, service_name, service_id }
 | filter service_appearances > 1
 | summarize circular_traces = count(),
             avg_revisits = avg(toDouble(service_appearances)),
             max_revisits = max(service_appearances),
-            by: { service_name }
+            by: { service_name, service_id }
 | sort circular_traces desc
 | limit 50`;
 
@@ -58,8 +59,9 @@ export function CircularDependencies() {
   const callPairsQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd caller = entityName(dt.entity.service),
+            caller_id = toString(dt.entity.service),
             callee = span.name
-| summarize call_count = count(), by: { caller, callee }
+| summarize call_count = count(), by: { caller, caller_id, callee }
 | filter call_count > 3
 | sort call_count desc
 | limit 100`;
@@ -93,6 +95,7 @@ export function CircularDependencies() {
     if (!circularResult.data?.records) return [];
     return circularResult.data.records.map((r: any) => ({
       serviceName: String(r.service_name ?? "Unknown"),
+      entityId: String(r.service_id ?? ""),
       circularTraces: Number(r.circular_traces ?? 0),
       avgRevisits: Number(r.avg_revisits ?? 0),
       maxRevisits: Number(r.max_revisits ?? 0),
@@ -103,6 +106,7 @@ export function CircularDependencies() {
     if (!callPairsResult.data?.records) return [];
     return callPairsResult.data.records.map((r: any) => ({
       caller: String(r.caller ?? "Unknown"),
+      callerId: String(r.caller_id ?? ""),
       callee: String(r.callee ?? "Unknown"),
       callCount: Number(r.call_count ?? 0),
     }));
@@ -110,10 +114,12 @@ export function CircularDependencies() {
 
   // Detect potential circular pairs: A calls B and B calls A
   const circularPairs = useMemo(() => {
-    const pairs: { serviceA: string; serviceB: string; aToBCount: number; bToACount: number }[] = [];
+    const pairs: { serviceA: string; serviceAId: string; serviceB: string; serviceBId: string; aToBCount: number; bToACount: number }[] = [];
     const callMap = new Map<string, number>();
+    const idMap = new Map<string, string>();
     callPairsData.forEach(p => {
       callMap.set(`${p.caller}→${p.callee}`, p.callCount);
+      idMap.set(p.caller, p.callerId);
     });
     const seen = new Set<string>();
     callPairsData.forEach(p => {
@@ -123,7 +129,9 @@ export function CircularDependencies() {
         seen.add(key);
         pairs.push({
           serviceA: p.caller,
+          serviceAId: p.callerId,
           serviceB: p.callee,
+          serviceBId: idMap.get(p.callee) ?? "",
           aToBCount: p.callCount,
           bToACount: callMap.get(reverse) ?? 0,
         });
@@ -153,8 +161,8 @@ export function CircularDependencies() {
   const columns = useMemo(() => [
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 250,
-      cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      cell: ({ value, rowData }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(rowData?.entityId || '')}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     {
@@ -272,9 +280,9 @@ export function CircularDependencies() {
             <div key={i} style={{ padding: "8px 12px", marginBottom: 6, borderRadius: 6, border: "1px solid rgba(165,110,255,0.15)", background: "rgba(165,110,255,0.03)" }}>
               <Flex justifyContent="space-between" alignItems="center">
                 <Flex alignItems="center" gap={8}>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(pair.serviceA)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceA}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(pair.serviceAId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceA}</a>
                   <span style={{ fontSize: 16, opacity: 0.4 }}>↔</span>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(pair.serviceB)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceB}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(pair.serviceBId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{pair.serviceB}</a>
                 </Flex>
                 <Flex gap={12}>
                   <Text style={{ fontSize: 11, opacity: 0.6 }}>A→B: {pair.aToBCount}</Text>

@@ -72,8 +72,8 @@ export function NPlus1Details() {
       ),
     },
     { id: "serviceName", header: "Service", accessor: "serviceName", width: 180,
-      cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      cell: ({ value, rowData }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(rowData?.entityId || '')}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     { id: "endpoint", header: "Endpoint", accessor: "endpoint", width: 200 },

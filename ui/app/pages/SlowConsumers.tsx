@@ -60,13 +60,14 @@ export function SlowConsumers() {
   const slowConsumerQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
+            service_id = toString(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | summarize avg_duration_ms = avg(duration_ms),
             p95_duration_ms = percentile(duration_ms, 95),
             p99_duration_ms = percentile(duration_ms, 99),
             max_duration_ms = max(duration_ms),
             total_spans = count(),
-            by: { service_name }
+            by: { service_name, service_id }
 | fieldsAdd variance_ratio = p99_duration_ms / avg_duration_ms
 | filter variance_ratio > 5 and total_spans > 10
 | sort variance_ratio desc
@@ -76,9 +77,10 @@ export function SlowConsumers() {
   const longTailQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
+            service_id = toString(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | filter duration_ms > 5000
-| fields service_name, span.name, duration_ms, trace.id
+| fields service_name, service_id, span.name, duration_ms, trace.id
 | sort duration_ms desc
 | limit 100`;
 
@@ -110,6 +112,7 @@ export function SlowConsumers() {
     if (!slowResult.data?.records) return [];
     return slowResult.data.records.map((r: any) => ({
       serviceName: String(r.service_name ?? "Unknown"),
+      entityId: String(r.service_id ?? ""),
       avgDuration: Number(r.avg_duration_ms ?? 0),
       p95Duration: Number(r.p95_duration_ms ?? 0),
       p99Duration: Number(r.p99_duration_ms ?? 0),
@@ -123,6 +126,7 @@ export function SlowConsumers() {
     if (!longTailResult.data?.records) return [];
     return longTailResult.data.records.map((r: any) => ({
       serviceName: String(r.service_name ?? "Unknown"),
+      entityId: String(r.service_id ?? ""),
       spanName: String(r["span.name"] ?? ""),
       durationMs: Number(r.duration_ms ?? 0),
       traceId: String(r["trace.id"] ?? ""),
@@ -132,8 +136,8 @@ export function SlowConsumers() {
   const columns = useMemo(() => [
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 200,
-      cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      cell: ({ value, rowData }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(rowData?.entityId || '')}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     {
@@ -284,7 +288,7 @@ export function SlowConsumers() {
             {longTailData.slice(0, 15).map((span, i) => (
               <Flex key={i} justifyContent="space-between" alignItems="center" style={{ padding: "6px 0", borderBottom: "1px solid rgba(128,128,128,0.06)" }}>
                 <Flex gap={8} alignItems="center" style={{ flex: 1, minWidth: 0 }}>
-                  <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(span.serviceName)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>{span.serviceName}</a>
+                  <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(span.entityId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>{span.serviceName}</a>
                   <Text style={{ fontSize: 11, opacity: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{span.spanName}</Text>
                 </Flex>
                 <Flex gap={8} alignItems="center">

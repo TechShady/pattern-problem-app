@@ -42,10 +42,11 @@ export function ChattyAPIs() {
   const chattyQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd caller_service = entityName(dt.entity.service),
+            caller_id = toString(dt.entity.service),
             trace_id = toString(trace.id)
 | summarize call_count = count(),
             distinct_targets = countDistinctExact(span.name),
-            by: { caller_service, trace_id }
+            by: { caller_service, caller_id, trace_id }
 | filter call_count > 20
 | sort call_count desc
 | limit 100`;
@@ -53,9 +54,10 @@ export function ChattyAPIs() {
   // Service-level chatty summary
   const chattySummaryQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd caller_service = entityName(dt.entity.service)
+| fieldsAdd caller_service = entityName(dt.entity.service),
+            caller_id = toString(dt.entity.service)
 | summarize total_calls = count(),
-            by: { caller_service }
+            by: { caller_service, caller_id }
 | filter total_calls > 50
 | sort total_calls desc
 | limit 20`;
@@ -91,6 +93,7 @@ export function ChattyAPIs() {
     if (!chattyResult.data?.records) return [];
     return chattyResult.data.records.map((r: any) => ({
       callerService: String(r.caller_service ?? "Unknown"),
+      callerId: String(r.caller_id ?? ""),
       traceId: String(r.trace_id ?? ""),
       callCount: Number(r.call_count ?? 0),
       distinctTargets: Number(r.distinct_targets ?? 0),
@@ -101,6 +104,7 @@ export function ChattyAPIs() {
     if (!summaryResult.data?.records) return [];
     return summaryResult.data.records.map((r: any) => ({
       service: String(r.caller_service ?? "Unknown"),
+      entityId: String(r.caller_id ?? ""),
       totalCalls: Number(r.total_calls ?? 0),
       avgFanOut: Number(r.avg_fan_out ?? 0),
     }));
@@ -141,8 +145,8 @@ export function ChattyAPIs() {
     },
     {
       id: "callerService", header: "Caller Service", accessor: "callerService", width: 250,
-      cell: ({ value }: any) => (
-        <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(value)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
+      cell: ({ value, rowData }: any) => (
+        <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(rowData?.callerId || '')}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 13 }}>{value}</a>
       ),
     },
     { id: "distinctTargets", header: "Distinct Endpoints", accessor: "distinctTargets", width: 120 },
@@ -265,7 +269,7 @@ export function ChattyAPIs() {
               return (
                 <div key={i} style={{ marginBottom: 8 }}>
                   <Flex justifyContent="space-between" style={{ marginBottom: 2 }}>
-                    <a href={`${ENV_URL}/ui/apps/dynatrace.services/explorer/services?perspective=performance&sort=entity%3Aascending&search=${encodeURIComponent(svc.service)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.service}</a>
+                    <a href={`${ENV_URL}/ui/apps/dynatrace.distributedtracing/explorer?filter=dt.entity.service+%3D+${encodeURIComponent(svc.entityId)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#4589FF", textDecoration: "none", fontSize: 12 }}>{svc.service}</a>
                     <Text style={{ fontSize: 12, fontWeight: 600 }}>{svc.totalCalls.toLocaleString()} calls</Text>
                   </Flex>
                   <div style={{ height: 6, borderRadius: 3, background: "rgba(128,128,128,0.1)" }}>
