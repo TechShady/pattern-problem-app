@@ -1,0 +1,22 @@
+{
+  "$schema": "./.dt-app/app.config.schema.json",
+  "environmentUrl": "https://abc123.apps.dynatrace.com",
+  "app": {
+    "name": "Pattern Problems",
+    "version": "1.2.4",
+    "description": "Identifies N+1, Chatty API, and other anti-pattern problems in services.",
+    "id": "my.pattern.problems.app",
+    "icon": "./assets/icon.png",
+    "scopes": [
+      { "name": "storage:spans:read", "comment": "read distributed traces / spans" },
+      { "name": "storage:events:read", "comment": "read events" },
+      { "name": "storage:entities:read", "comment": "read entity data" },
+      { "name": "storage:metrics:read", "comment": "read metrics" },
+      { "name": "storage:buckets:read", "comment": "read storage buckets" },
+      { "name": "storage:logs:read", "comment": "read log data" },
+      { "name": "state:user-app-states:read", "comment": "read user disclaimer preference" },
+      { "name": "state:user-app-states:write", "comment": "save user disclaimer preference" }
+    ],
+    "functionSandbox": {}
+  }
+}

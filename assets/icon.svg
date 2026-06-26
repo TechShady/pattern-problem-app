@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="10%" stop-color="#2d1b4e"/>
+      <stop offset="100%" stop-color="#1a0f30"/>
+    </radialGradient>
+    <linearGradient id="loop-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff832b"/>
+      <stop offset="100%" stop-color="#c62239"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="url(#bg)"/>
+  <!-- Outer ring -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="#c62239" stroke-width="2" opacity="0.8"/>
+  <!-- Anti-pattern infinity loop (broken) -->
+  <path d="M 20 32 C 20 24, 30 24, 30 32 C 30 40, 20 40, 20 32" fill="none" stroke="url(#loop-grad)" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 34 32 C 34 24, 44 24, 44 32 C 44 40, 34 40, 34 32" fill="none" stroke="url(#loop-grad)" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 3"/>
+  <!-- Break/warning X mark -->
+  <line x1="27" y1="16" x2="37" y2="22" stroke="#c62239" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="37" y1="16" x2="27" y2="22" stroke="#c62239" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Arrow indicators (cycle direction) -->
+  <polygon points="14,29 19,27 17,32" fill="#ff832b" opacity="0.8"/>
+  <polygon points="50,35 45,37 47,32" fill="#ff832b" opacity="0.8"/>
+  <!-- Warning dots -->
+  <circle cx="32" cy="7" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="52" cy="20" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="56" cy="38" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="48" cy="52" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="16" cy="52" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="8" cy="38" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <circle cx="12" cy="20" r="1.5" fill="#a56eff" opacity="0.6"/>
+  <!-- N+1 text hint -->
+  <text x="32" y="50" text-anchor="middle" font-size="7" font-weight="bold" fill="#ff832b" opacity="0.7" font-family="monospace">N+1</text>
+</svg>

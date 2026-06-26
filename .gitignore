@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.dt-app/
+*.log
+dashboard.json
+dashboard-content.json
+dashboard-full.yaml
