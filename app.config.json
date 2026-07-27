@@ -1,6 +1,6 @@
 {
   "$schema": "./.dt-app/app.config.schema.json",
-  "environmentUrl": "https://lfa60087.apps.dynatrace.com",
+  "environmentUrl": "https://oqr47576.sprint.apps.dynatracelabs.com",
   "app": {
     "name": "Pattern Problems",
     "version": "1.2.6",
