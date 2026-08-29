@@ -142,8 +142,8 @@ export function SlowConsumers() {
 
   const costImpact = useMemo(() => {
     if (slowData.length === 0) return null;
-    // Wasted milliseconds: total_spans × (p99 - avg) per service
-    const totalWastedMs = slowData.reduce((s, d) => s + d.totalSpans * Math.max(0, d.p99Duration - d.avgDuration), 0);
+    // Wasted milliseconds: only ~1% of spans hit p99 latency, so multiply by 0.01
+    const totalWastedMs = slowData.reduce((s, d) => s + d.totalSpans * 0.01 * Math.max(0, d.p99Duration - d.avgDuration), 0);
     const annualWastedSeconds = (totalWastedMs / 1000) * annualMultiplier;
     // Server cost per second (annual server cost / seconds in a year)
     const serverCostPerSecond = (costSettings.monthlyAppServerCost * 12) / (365 * 24 * 3600);
