@@ -134,18 +134,24 @@ export function ExecutiveSummary() {
   const tf = `from: ${timeframe.from}`;
   const annualMultiplier = useMemo(() => getAnnualMultiplier(timeframe.from), [timeframe.from]);
 
-  const n1Result = useDql({
+  // N+1 aggregate — exact pattern from PatternOverview (known to work)
+  const n1AggResult = useDql({
     query: `fetch spans, ${tf}
 | filter db.system != "null"
 | filterOut contains(db.query.text, "INSERT")
-| summarize
-    s = sum(toDouble(aggregation.count)),
-    s1 = sum(if(aggregation.count > 1, toDouble(aggregation.count), 0.0)),
-    c1 = toDouble(countif(aggregation.count > 1)),
-    n1_services = countDistinct(if(aggregation.count > 1, dt.entity.service, null))
-| fieldsAdd reducible = s1 - c1, reduction_fraction = if(s > 0, (s1 - c1) / s, 0.0)`,
+| summarize c=count(), s=sum(aggregation.count), c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
+| fieldsAdd reduction_fraction = (toDouble(s1)-toDouble(c1))/toDouble(s), reducible = toDouble(s1)-toDouble(c1)`,
   });
 
+  // N+1 services count — separate simple query
+  const n1SvcResult = useDql({
+    query: `fetch spans, ${tf}
+| filter db.system != "null" and aggregation.count > 1
+| filterOut contains(db.query.text, "INSERT")
+| summarize n1_services = countDistinct(dt.entity.service)`,
+  });
+
+  // Chatty aggregate
   const chattyResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
@@ -155,6 +161,7 @@ export function ExecutiveSummary() {
 | summarize total_chatty_calls = sum(calls), chatty_services = count()`,
   });
 
+  // Circular aggregate
   const circularResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
@@ -165,26 +172,41 @@ export function ExecutiveSummary() {
 | summarize total_circular_calls = sum(circular_traces), circular_services = count()`,
   });
 
-  const slowResult = useDql({
+  // Slow per-service — exact pattern from SlowConsumers (known to work); aggregate in JS
+  const slowSvcResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd svc = entityName(dt.entity.service), dur_ms = toDouble(duration) / 1000000.0
 | summarize avg_dur = avg(dur_ms), p99_dur = percentile(dur_ms, 99), total_spans = count(), by: {svc}
-| fieldsAdd variance_ratio = p99_dur / avg_dur, wasted_ms = total_spans * 0.01 * if(p99_dur > avg_dur, p99_dur - avg_dur, 0.0)
+| fieldsAdd variance_ratio = p99_dur / avg_dur
 | filter variance_ratio > 5 and total_spans > 10
-| summarize total_wasted_ms = sum(wasted_ms), high_var_services = count(), long_tail_count = countif(p99_dur > 5000)`,
+| sort variance_ratio desc
+| limit 50`,
+  });
+
+  // Long-tail span count for retry overhead
+  const slowLongTailResult = useDql({
+    query: `fetch spans, ${tf}
+| filter isNotNull(dt.entity.service)
+| fieldsAdd dur_ms = toDouble(duration) / 1000000.0
+| filter dur_ms > 5000
+| summarize long_tail_count = count()`,
   });
 
   const isLoading =
-    n1Result.isLoading || chattyResult.isLoading || circularResult.isLoading || slowResult.isLoading;
+    n1AggResult.isLoading || n1SvcResult.isLoading ||
+    chattyResult.isLoading || circularResult.isLoading ||
+    slowSvcResult.isLoading || slowLongTailResult.isLoading;
 
   const data = useMemo<ExecData | null>(() => {
     if (isLoading) return null;
 
-    const n1Row = n1Result.data?.records?.[0] ?? {};
+    const n1Row = n1AggResult.data?.records?.[0] ?? {};
+    const n1SvcRow = n1SvcResult.data?.records?.[0] ?? {};
     const chattyRow = chattyResult.data?.records?.[0] ?? {};
     const circularRow = circularResult.data?.records?.[0] ?? {};
-    const slowRow = slowResult.data?.records?.[0] ?? {};
+    const slowRows = slowSvcResult.data?.records ?? [];
+    const longTailRow = slowLongTailResult.data?.records?.[0] ?? {};
 
     const {
       monthlyDbCost, avgPayloadKb, networkEgressRatePerGb, monthlyAppServerCost,
@@ -195,17 +217,17 @@ export function ExecutiveSummary() {
 
     const annualIncidentCost = monthlyDbIncidents * 12 * avgMttrHours * engineersPerIncident * engineerHourlyRate;
 
-    // N+1
+    // N+1 — same formula as PatternOverview
     const reductionFraction = Number(n1Row.reduction_fraction ?? 0);
     const reducible = Number(n1Row.reducible ?? 0);
-    const n1Services = Number(n1Row.n1_services ?? 0);
+    const n1Services = Number(n1SvcRow.n1_services ?? 0);
     const n1Cost =
       reductionFraction * monthlyDbCost * 12 +
       reducible * annualMultiplier * (avgPayloadKb / (1024 * 1024)) * networkEgressRatePerGb +
       (dbComputePct / 100) * reductionFraction * monthlyAppServerCost * 12 +
       annualIncidentCost * reductionFraction;
 
-    // Chatty
+    // Chatty — same formula as ChattyAPIs
     const totalChattyCalls = Number(chattyRow.total_chatty_calls ?? 0);
     const chattyServices = Number(chattyRow.chatty_services ?? 0);
     const annualChattyCalls = totalChattyCalls * annualMultiplier;
@@ -214,7 +236,7 @@ export function ExecutiveSummary() {
       annualChattyCalls * (costPerMillionApiRequests / 1_000_000) +
       annualIncidentCost * Math.min(1, chattyServices / 10);
 
-    // Circular
+    // Circular — same formula as CircularDependencies
     const totalCircularCalls = Number(circularRow.total_circular_calls ?? 0);
     const circularServices = Number(circularRow.circular_services ?? 0);
     const annualCircularCalls = totalCircularCalls * annualMultiplier;
@@ -223,10 +245,14 @@ export function ExecutiveSummary() {
       Math.min(circularServices, monthlyDbIncidents) * 12 * avgMttrHours * engineersPerIncident * engineerHourlyRate +
       circularServices * engineerHourlyRate * 2 * 12;
 
-    // Slow
-    const totalWastedMs = Number(slowRow.total_wasted_ms ?? 0);
-    const highVarServices = Number(slowRow.high_var_services ?? 0);
-    const longTailCount = Number(slowRow.long_tail_count ?? 0);
+    // Slow — aggregate per-service rows in JS, same formula as SlowConsumers
+    const totalWastedMs = (slowRows as any[]).reduce((s, r) => {
+      const p99 = Number(r.p99_dur ?? 0);
+      const avg = Number(r.avg_dur ?? 0);
+      return s + Number(r.total_spans ?? 0) * 0.01 * Math.max(0, p99 - avg);
+    }, 0);
+    const highVarServices = slowRows.length;
+    const longTailCount = Number(longTailRow.long_tail_count ?? 0);
     const annualWastedSeconds = (totalWastedMs / 1000) * annualMultiplier;
     const serverCostPerSecond = (monthlyAppServerCost * 12) / (365 * 24 * 3600);
     const slowCost =
@@ -240,7 +266,10 @@ export function ExecutiveSummary() {
       circularCost, circularServices, circularInvestment: circularServices * devHoursPerCircularFix * engineerHourlyRate,
       slowCost, slowServices: highVarServices, slowInvestment: highVarServices * devHoursPerSlowFix * engineerHourlyRate,
     };
-  }, [n1Result.data, chattyResult.data, circularResult.data, slowResult.data, isLoading, costSettings, annualMultiplier]);
+  }, [
+    n1AggResult.data, n1SvcResult.data, chattyResult.data, circularResult.data,
+    slowSvcResult.data, slowLongTailResult.data, isLoading, costSettings, annualMultiplier,
+  ]);
 
   const { panel: aiPanel } = useAIInsights(noopInsights, aiOpen, closeAi);
 
