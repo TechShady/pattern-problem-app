@@ -299,4 +299,172 @@
 @media (max-width: 900px) {
   .pp-charts-row { grid-template-columns: 1fr; }
   .pp-two-col { grid-template-columns: 1fr; }
+  .pp-cost-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Cost Impact Section */
+.pp-cost-section {
+  border: 1px solid rgba(36, 161, 72, 0.25);
+  border-radius: 10px;
+  padding: 16px;
+  background: rgba(36, 161, 72, 0.03);
+  margin-bottom: 20px;
+}
+
+.pp-cost-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.pp-cost-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.pp-cost-section-meta {
+  font-size: 11px;
+  opacity: 0.45;
+}
+
+.pp-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pp-cost-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(36, 161, 72, 0.15);
+  background: rgba(36, 161, 72, 0.04);
+}
+
+.pp-cost-card-label {
+  font-size: 11px;
+  opacity: 0.55;
+  margin-bottom: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pp-cost-card-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #24A148;
+  margin-bottom: 4px;
+}
+
+.pp-cost-card-basis {
+  font-size: 10px;
+  opacity: 0.4;
+  line-height: 1.4;
+}
+
+.pp-cost-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(36, 161, 72, 0.08);
+  border: 1px solid rgba(36, 161, 72, 0.2);
+}
+
+.pp-cost-total-label {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pp-cost-total-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: #24A148;
+}
+
+/* Settings Sheet */
+.pp-settings-body {
+  padding: 4px 0;
+}
+
+.pp-setting-section {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.45;
+  padding: 16px 0 8px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+  margin-bottom: 4px;
+}
+
+.pp-setting-section:first-child {
+  padding-top: 4px;
+}
+
+.pp-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.07);
+}
+
+.pp-setting-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-setting-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pp-setting-hint {
+  font-size: 11px;
+  opacity: 0.45;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.pp-setting-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pp-setting-affix {
+  font-size: 12px;
+  opacity: 0.5;
+  font-weight: 500;
+}
+
+.pp-setting-input {
+  width: 90px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: rgba(128, 128, 128, 0.05);
+  color: inherit;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: right;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.pp-setting-input:focus {
+  border-color: rgba(69, 137, 255, 0.5);
+  background: rgba(69, 137, 255, 0.04);
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
@@ -9,16 +9,26 @@ import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe, getBinSize } from "../TimeframeContext";
+import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings } from "../CostSettings";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
 
 let ENV_URL = "";
 try { ENV_URL = getEnvironmentUrl(); } catch { /* dev fallback */ }
 
+const fmt = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
 export function PatternOverview() {
   const { timeframe } = useTimeframe();
   const [aiOpen, setAiOpen] = useState(false);
   const [forecastState, setForecastState] = useState<{ label: string; sparkline: number[]; color?: string } | null>(null);
+  const [costSettings, setCostSettings] = useState<CostSettings>(loadCostSettings);
+
+  useEffect(() => {
+    const refresh = () => setCostSettings(loadCostSettings());
+    window.addEventListener(COST_SETTINGS_EVENT, refresh);
+    return () => window.removeEventListener(COST_SETTINGS_EVENT, refresh);
+  }, []);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
   const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
@@ -169,8 +179,21 @@ export function PatternOverview() {
     return {
       percentage: Number(rec.queryReduction ?? 0),
       count: Number(rec.reducibleQueries ?? 0),
+      totalWeeklyQueries: Number(rec.s ?? 0),
     };
   }, [reductionResult.data]);
+
+  const costImpact = useMemo(() => {
+    if (!reduction || reduction.count === 0) return null;
+    const reductionFraction = reduction.percentage / 100;
+    const dbSavings = reductionFraction * costSettings.monthlyDbCost * 12;
+    const networkSavings = reduction.count * (costSettings.avgPayloadKb / (1024 * 1024)) * costSettings.networkEgressRatePerGb;
+    const computeSavings = (costSettings.dbComputePct / 100) * reductionFraction * costSettings.monthlyAppServerCost * 12;
+    const annualIncidentCost = costSettings.monthlyDbIncidents * 12 * costSettings.avgMttrHours * costSettings.engineersPerIncident * costSettings.engineerHourlyRate;
+    const engineeringSavings = annualIncidentCost * reductionFraction;
+    const total = dbSavings + networkSavings + computeSavings + engineeringSavings;
+    return { dbSavings, networkSavings, computeSavings, engineeringSavings, total };
+  }, [reduction, costSettings]);
 
   const prevReducible = useMemo(() => {
     const rec = reductionPrevResult.data?.records?.[0] as any;
@@ -334,6 +357,52 @@ export function PatternOverview() {
               color={(reduction?.count ?? 0) > 1000 ? "#C21930" : "#FF832B"}
             />
           </div>
+
+          {/* Projected Cost Impact */}
+          {costImpact && (
+            <div className="pp-cost-section">
+              <div className="pp-cost-section-header">
+                <span className="pp-cost-section-title">Projected Annual Cost Impact</span>
+                <span className="pp-cost-section-meta">
+                  Based on {reduction?.count.toLocaleString()} reducible queries/yr (7-day avg annualized) &mdash; adjust assumptions via the settings icon above
+                </span>
+              </div>
+              <div className="pp-cost-grid">
+                <div className="pp-cost-card">
+                  <div className="pp-cost-card-label">DB Infrastructure</div>
+                  <div className="pp-cost-card-value">{fmt(costImpact.dbSavings)}</div>
+                  <div className="pp-cost-card-basis">
+                    {reduction?.percentage.toFixed(1)}% query reduction &times; ${costSettings.monthlyDbCost.toLocaleString()}/mo
+                  </div>
+                </div>
+                <div className="pp-cost-card">
+                  <div className="pp-cost-card-label">Network Egress</div>
+                  <div className="pp-cost-card-value">{fmt(costImpact.networkSavings)}</div>
+                  <div className="pp-cost-card-basis">
+                    {costSettings.avgPayloadKb} KB/query &times; ${costSettings.networkEgressRatePerGb}/GB
+                  </div>
+                </div>
+                <div className="pp-cost-card">
+                  <div className="pp-cost-card-label">App Compute</div>
+                  <div className="pp-cost-card-value">{fmt(costImpact.computeSavings)}</div>
+                  <div className="pp-cost-card-basis">
+                    {costSettings.dbComputePct}% of ${costSettings.monthlyAppServerCost.toLocaleString()}/mo server cost
+                  </div>
+                </div>
+                <div className="pp-cost-card">
+                  <div className="pp-cost-card-label">Engineering &amp; Incidents</div>
+                  <div className="pp-cost-card-value">{fmt(costImpact.engineeringSavings)}</div>
+                  <div className="pp-cost-card-basis">
+                    {costSettings.monthlyDbIncidents} incidents/mo &times; {costSettings.avgMttrHours}h &times; {costSettings.engineersPerIncident} eng
+                  </div>
+                </div>
+              </div>
+              <div className="pp-cost-total">
+                <span className="pp-cost-total-label">Total Estimated Annual Savings</span>
+                <span className="pp-cost-total-value">{fmt(costImpact.total)}</span>
+              </div>
+            </div>
+          )}
 
           {/* Services and Databases distribution */}
           <div className="pp-two-col">
