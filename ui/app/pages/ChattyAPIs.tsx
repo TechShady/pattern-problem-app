@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
@@ -10,6 +10,7 @@ import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe, getBinSize } from "../TimeframeContext";
+import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings, getAnnualMultiplier, fmt } from "../CostSettings";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
 
@@ -25,9 +26,16 @@ export function ChattyAPIs() {
   const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
     setForecastState({ label, sparkline, color });
   }, []);
+  const [costSettings, setCostSettings] = useState<CostSettings>(loadCostSettings);
+  useEffect(() => {
+    const refresh = () => setCostSettings(loadCostSettings());
+    window.addEventListener(COST_SETTINGS_EVENT, refresh);
+    return () => window.removeEventListener(COST_SETTINGS_EVENT, refresh);
+  }, []);
 
   const tf = `from: ${timeframe.from}`;
   const binSize = getBinSize(timeframe.from);
+  const annualMultiplier = useMemo(() => getAnnualMultiplier(timeframe.from), [timeframe.from]);
 
   // Compute previous period
   const prevTf = useMemo(() => {
@@ -129,6 +137,18 @@ export function ChattyAPIs() {
     };
   }, [prevResult.data, prevTf]);
 
+  const costImpact = useMemo(() => {
+    const totalCallsInPeriod = summaryData.reduce((s, d) => s + d.totalCalls, 0);
+    if (totalCallsInPeriod === 0) return null;
+    const annualExtraCalls = totalCallsInPeriod * annualMultiplier;
+    const networkSavings = annualExtraCalls * (costSettings.avgApiPayloadKb / (1024 * 1024)) * costSettings.networkEgressRatePerGb;
+    const computeSavings = annualExtraCalls * (costSettings.costPerMillionApiRequests / 1_000_000);
+    const incidentFraction = Math.min(1, summaryData.length / 10);
+    const engineeringSavings = costSettings.monthlyDbIncidents * 12 * costSettings.avgMttrHours * costSettings.engineersPerIncident * costSettings.engineerHourlyRate * incidentFraction;
+    const total = networkSavings + computeSavings + engineeringSavings;
+    return { networkSavings, computeSavings, engineeringSavings, total, annualExtraCalls };
+  }, [summaryData, annualMultiplier, costSettings]);
+
   const columns = useMemo(() => [
     {
       id: "callCount",
@@ -193,6 +213,14 @@ export function ChattyAPIs() {
       });
     }
 
+    if (costImpact) {
+      insights.push({
+        severity: costImpact.total > 10000 ? "critical" : "warning",
+        icon: "💰",
+        text: `Projected annual cost impact: ${fmt(costImpact.total)} across network, compute, and engineering costs from ${Math.round(costImpact.annualExtraCalls).toLocaleString()} excess API calls/year.`,
+      });
+    }
+
     recs.push({ impact: "high", text: "Introduce a Backend-for-Frontend (BFF) or aggregation layer to batch multiple fine-grained calls into a single coarse-grained request." });
     recs.push({ impact: "medium", text: "Implement response caching (TTL-based) for frequently-called downstream APIs to reduce redundant network round-trips." });
     recs.push({ impact: "low", text: "Consider GraphQL or gRPC streaming as alternatives to multiple REST calls for data that naturally groups together." });
@@ -204,7 +232,7 @@ export function ChattyAPIs() {
       insights,
       recommendations: recs,
     };
-  }, [chattyData, summaryData]);
+  }, [chattyData, summaryData, costImpact]);
 
   const { panel: aiPanel } = useAIInsights(analyzeChat, aiOpen, closeAi);
 
@@ -254,6 +282,45 @@ export function ChattyAPIs() {
         />
       </div>
 
+      {/* Cost Impact */}
+      {costImpact && (
+        <div className="pp-cost-section">
+          <div className="pp-cost-section-header">
+            <span className="pp-cost-section-title">Projected Annual Cost Impact</span>
+            <span className="pp-cost-section-meta">
+              Based on {timeframe.displayLabel} avg annualized (&times;{annualMultiplier}) &mdash; adjust assumptions via the settings icon above
+            </span>
+          </div>
+          <div className="pp-cost-grid">
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Network Overhead</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.networkSavings)}</div>
+              <div className="pp-cost-card-basis">
+                {Math.round(costImpact.annualExtraCalls).toLocaleString()} calls &times; {costSettings.avgApiPayloadKb}KB &times; ${costSettings.networkEgressRatePerGb}/GB
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Server Compute</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.computeSavings)}</div>
+              <div className="pp-cost-card-basis">
+                {Math.round(costImpact.annualExtraCalls).toLocaleString()} calls &times; ${costSettings.costPerMillionApiRequests}/million
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Engineering &amp; Incidents</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.engineeringSavings)}</div>
+              <div className="pp-cost-card-basis">
+                {costSettings.monthlyDbIncidents} incidents/mo &times; {costSettings.avgMttrHours}h &times; {costSettings.engineersPerIncident} eng (scaled to {summaryData.length} services)
+              </div>
+            </div>
+          </div>
+          <div className="pp-cost-total">
+            <span className="pp-cost-total-label">Total Estimated Annual Savings</span>
+            <span className="pp-cost-total-value">{fmt(costImpact.total)}</span>
+          </div>
+        </div>
+      )}
+
       {/* Summary by service */}
       <div className="pp-chart-card" style={{ marginBottom: 20 }}>
         <div className="pp-chart-title">Chatty Services Summary</div>
@@ -285,7 +352,7 @@ export function ChattyAPIs() {
       {/* Detail table */}
       <div className="pp-table-section">
         <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: 12 }}>
-          <div className="pp-table-title">Chatty Span Patterns (fan-out &gt; 5 calls)</div>
+          <div className="pp-table-title">Chatty Span Patterns (fan-out &gt; 20 calls)</div>
           <Text style={{ fontSize: 12, opacity: 0.5 }}>{chattyData.length} results</Text>
         </Flex>
         {chattyResult.isLoading ? (

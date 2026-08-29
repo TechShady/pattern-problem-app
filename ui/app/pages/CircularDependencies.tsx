@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
@@ -10,6 +10,7 @@ import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe, getBinSize } from "../TimeframeContext";
+import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings, getAnnualMultiplier, fmt } from "../CostSettings";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
 
@@ -25,9 +26,16 @@ export function CircularDependencies() {
   const openForecast = useCallback((label: string, sparkline: number[], color?: string) => {
     setForecastState({ label, sparkline, color });
   }, []);
+  const [costSettings, setCostSettings] = useState<CostSettings>(loadCostSettings);
+  useEffect(() => {
+    const refresh = () => setCostSettings(loadCostSettings());
+    window.addEventListener(COST_SETTINGS_EVENT, refresh);
+    return () => window.removeEventListener(COST_SETTINGS_EVENT, refresh);
+  }, []);
 
   const tf = `from: ${timeframe.from}`;
   const binSize = getBinSize(timeframe.from);
+  const annualMultiplier = useMemo(() => getAnnualMultiplier(timeframe.from), [timeframe.from]);
 
   // Compute previous period
   const prevTf = useMemo(() => {
@@ -39,7 +47,6 @@ export function CircularDependencies() {
   }, [timeframe.from]);
 
   // Detect circular dependencies: traces where a service appears more than once
-  // This indicates Service A -> B -> A or A -> B -> C -> A patterns
   const circularQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
@@ -158,6 +165,21 @@ export function CircularDependencies() {
     };
   }, [prevResult.data, prevTf]);
 
+  const costImpact = useMemo(() => {
+    const totalCircularCalls = circularPairs.reduce((s, p) => s + p.aToBCount + p.bToACount, 0);
+    if (totalCircularCalls === 0 && circularData.length === 0) return null;
+    const annualCircularCalls = totalCircularCalls * annualMultiplier;
+    // Compute waste from circular calls
+    const computeWaste = annualCircularCalls * (costSettings.costPerMillionApiRequests / 1_000_000);
+    // Deployment risk: circular pairs make releases riskier — estimated extra incident per pair per month
+    const deploymentRisk = Math.min(circularPairs.length, costSettings.monthlyDbIncidents) * 12
+      * costSettings.avgMttrHours * costSettings.engineersPerIncident * costSettings.engineerHourlyRate;
+    // Developer coupling overhead: hours spent managing tightly-coupled deployments
+    const devCouplingCost = circularData.length * costSettings.engineerHourlyRate * 2 * 12;
+    const total = computeWaste + deploymentRisk + devCouplingCost;
+    return { computeWaste, deploymentRisk, devCouplingCost, total, annualCircularCalls };
+  }, [circularPairs, circularData, annualMultiplier, costSettings]);
+
   const columns = useMemo(() => [
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 250,
@@ -210,6 +232,14 @@ export function CircularDependencies() {
       });
     }
 
+    if (costImpact) {
+      insights.push({
+        severity: costImpact.total > 10000 ? "critical" : "warning",
+        icon: "💰",
+        text: `Projected annual cost impact: ${fmt(costImpact.total)} across compute waste, deployment risk, and engineering coupling overhead.`,
+      });
+    }
+
     recs.push({ impact: "high", text: "Break circular dependencies by introducing an event bus or message queue between tightly-coupled services." });
     recs.push({ impact: "high", text: "Apply the Dependency Inversion Principle — extract shared logic into a third service that both can call without creating a cycle." });
     recs.push({ impact: "medium", text: "Add circuit breakers with cycle detection to prevent infinite recursion and cascading failures." });
@@ -221,7 +251,7 @@ export function CircularDependencies() {
       insights,
       recommendations: recs,
     };
-  }, [circularData, circularPairs]);
+  }, [circularData, circularPairs, costImpact]);
 
   const { panel: aiPanel } = useAIInsights(analyzeCircular, aiOpen, closeAi);
 
@@ -271,6 +301,45 @@ export function CircularDependencies() {
           isLoading={circularResult.isLoading}
         />
       </div>
+
+      {/* Cost Impact */}
+      {costImpact && (
+        <div className="pp-cost-section">
+          <div className="pp-cost-section-header">
+            <span className="pp-cost-section-title">Projected Annual Cost Impact</span>
+            <span className="pp-cost-section-meta">
+              Based on {timeframe.displayLabel} avg annualized (&times;{annualMultiplier}) &mdash; adjust assumptions via the settings icon above
+            </span>
+          </div>
+          <div className="pp-cost-grid">
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Compute Waste</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.computeWaste)}</div>
+              <div className="pp-cost-card-basis">
+                {Math.round(costImpact.annualCircularCalls).toLocaleString()} circular calls/yr &times; ${costSettings.costPerMillionApiRequests}/million
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Deployment Risk</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.deploymentRisk)}</div>
+              <div className="pp-cost-card-basis">
+                {circularPairs.length} coupled pairs &times; incident cost from tightly-coupled releases
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Dev Coupling Overhead</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.devCouplingCost)}</div>
+              <div className="pp-cost-card-basis">
+                {circularData.length} circular services &times; 2 eng-hrs/mo &times; ${costSettings.engineerHourlyRate}/hr
+              </div>
+            </div>
+          </div>
+          <div className="pp-cost-total">
+            <span className="pp-cost-total-label">Total Estimated Annual Savings</span>
+            <span className="pp-cost-total-value">{fmt(costImpact.total)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Bidirectional pairs */}
       {circularPairs.length > 0 && (

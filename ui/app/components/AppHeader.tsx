@@ -169,6 +169,25 @@ export function AppHeader({ aiOpen, onAiToggle }: AppHeaderProps) {
             step={5}
           />
 
+          <div className="pp-setting-section">API &amp; Service Calls</div>
+          <SettingRow
+            label="Avg API Payload Size"
+            hint="Average data transferred per API call (request + response) — used for Chatty API network savings"
+            value={draft.avgApiPayloadKb}
+            onChange={set("avgApiPayloadKb")}
+            suffix="KB"
+            step={1}
+          />
+          <SettingRow
+            label="Cost per Million API Requests"
+            hint="Compute + network cost per million service-to-service API calls (includes both caller and receiver)"
+            value={draft.costPerMillionApiRequests}
+            onChange={set("costPerMillionApiRequests")}
+            prefix="$"
+            suffix="/million"
+            step={0.5}
+          />
+
           <div className="pp-setting-section">Engineering &amp; Incidents</div>
           <SettingRow
             label="Engineer Hourly Rate"

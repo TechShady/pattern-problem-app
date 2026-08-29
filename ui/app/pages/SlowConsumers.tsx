@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { getEnvironmentUrl } from "@dynatrace-sdk/app-environment";
 import { Flex } from "@dynatrace/strato-components/layouts";
@@ -10,6 +10,7 @@ import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe, getBinSize } from "../TimeframeContext";
+import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings, getAnnualMultiplier, fmt } from "../CostSettings";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
 
@@ -21,8 +22,15 @@ export function SlowConsumers() {
   const [aiOpen, setAiOpen] = useState(false);
   const closeAi = useCallback(() => setAiOpen(false), []);
   const aiCtx = useMemo(() => ({ open: aiOpen, close: closeAi }), [aiOpen, closeAi]);
+  const [costSettings, setCostSettings] = useState<CostSettings>(loadCostSettings);
+  useEffect(() => {
+    const refresh = () => setCostSettings(loadCostSettings());
+    window.addEventListener(COST_SETTINGS_EVENT, refresh);
+    return () => window.removeEventListener(COST_SETTINGS_EVENT, refresh);
+  }, []);
 
   const tf = `from: ${timeframe.from}`;
+  const annualMultiplier = useMemo(() => getAnnualMultiplier(timeframe.from), [timeframe.from]);
 
   // Compute previous period
   const prevTf = useMemo(() => {
@@ -56,7 +64,6 @@ export function SlowConsumers() {
             max_variance = max(variance_ratio)` : null;
 
   // Detect slow consumers: spans with disproportionately long duration compared to siblings
-  // High duration variance within the same trace indicates consumer bottlenecks
   const slowConsumerQuery = `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
 | fieldsAdd service_name = entityName(dt.entity.service),
@@ -133,6 +140,24 @@ export function SlowConsumers() {
     }));
   }, [longTailResult.data]);
 
+  const costImpact = useMemo(() => {
+    if (slowData.length === 0) return null;
+    // Wasted milliseconds: total_spans × (p99 - avg) per service
+    const totalWastedMs = slowData.reduce((s, d) => s + d.totalSpans * Math.max(0, d.p99Duration - d.avgDuration), 0);
+    const annualWastedSeconds = (totalWastedMs / 1000) * annualMultiplier;
+    // Server cost per second (annual server cost / seconds in a year)
+    const serverCostPerSecond = (costSettings.monthlyAppServerCost * 12) / (365 * 24 * 3600);
+    const computeWaste = annualWastedSeconds * serverCostPerSecond;
+    // Retry overhead: long-tail spans trigger timeouts → retries → extra compute
+    const annualLongTailSpans = longTailData.length * annualMultiplier;
+    const retryOverhead = annualLongTailSpans * 3 * (costSettings.costPerMillionApiRequests / 1_000_000);
+    // Engineering: incidents scaled by number of high-variance services
+    const incidentFraction = Math.min(1, slowData.length / 5);
+    const engineeringSavings = costSettings.monthlyDbIncidents * 12 * costSettings.avgMttrHours * costSettings.engineersPerIncident * costSettings.engineerHourlyRate * incidentFraction;
+    const total = computeWaste + retryOverhead + engineeringSavings;
+    return { computeWaste, retryOverhead, engineeringSavings, total, annualWastedSeconds };
+  }, [slowData, longTailData, annualMultiplier, costSettings]);
+
   const columns = useMemo(() => [
     {
       id: "serviceName", header: "Service", accessor: "serviceName", width: 200,
@@ -194,6 +219,14 @@ export function SlowConsumers() {
       });
     }
 
+    if (costImpact) {
+      insights.push({
+        severity: costImpact.total > 10000 ? "critical" : "warning",
+        icon: "💰",
+        text: `Projected annual cost impact: ${fmt(costImpact.total)} from wasted compute, retry overhead, and engineering incidents from slow consumer patterns.`,
+      });
+    }
+
     recs.push({ impact: "high", text: "Implement async processing with backpressure mechanisms (e.g., reactive streams, bounded queues) for slow consumers." });
     recs.push({ impact: "high", text: "Add timeout boundaries and circuit breakers to prevent slow consumers from blocking upstream services." });
     recs.push({ impact: "medium", text: "Profile long-tail spans for GC pauses, lock contention, or synchronous I/O that causes intermittent slowdowns." });
@@ -206,7 +239,7 @@ export function SlowConsumers() {
       insights,
       recommendations: recs,
     };
-  }, [slowData, longTailData]);
+  }, [slowData, longTailData, costImpact]);
 
   const { panel: aiPanel } = useAIInsights(analyzeSlowConsumers, aiOpen, closeAi);
 
@@ -260,6 +293,45 @@ export function SlowConsumers() {
           isLoading={slowResult.isLoading}
         />
       </div>
+
+      {/* Cost Impact */}
+      {costImpact && (
+        <div className="pp-cost-section">
+          <div className="pp-cost-section-header">
+            <span className="pp-cost-section-title">Projected Annual Cost Impact</span>
+            <span className="pp-cost-section-meta">
+              Based on {timeframe.displayLabel} avg annualized (&times;{annualMultiplier}) &mdash; adjust assumptions via the settings icon above
+            </span>
+          </div>
+          <div className="pp-cost-grid">
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Server Compute Waste</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.computeWaste)}</div>
+              <div className="pp-cost-card-basis">
+                {Math.round(costImpact.annualWastedSeconds).toLocaleString()}s wasted compute/yr &times; ${costSettings.monthlyAppServerCost.toLocaleString()}/mo server cost
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Retry &amp; Timeout Overhead</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.retryOverhead)}</div>
+              <div className="pp-cost-card-basis">
+                {longTailData.length} long-tail spans &times; {annualMultiplier}× &times; 3 avg retries
+              </div>
+            </div>
+            <div className="pp-cost-card">
+              <div className="pp-cost-card-label">Engineering &amp; Incidents</div>
+              <div className="pp-cost-card-value">{fmt(costImpact.engineeringSavings)}</div>
+              <div className="pp-cost-card-basis">
+                {costSettings.monthlyDbIncidents} incidents/mo &times; {costSettings.avgMttrHours}h &times; {costSettings.engineersPerIncident} eng (scaled to {slowData.length} services)
+              </div>
+            </div>
+          </div>
+          <div className="pp-cost-total">
+            <span className="pp-cost-total-label">Total Estimated Annual Savings</span>
+            <span className="pp-cost-total-value">{fmt(costImpact.total)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Main table */}
       <div className="pp-table-section" style={{ marginBottom: 20 }}>

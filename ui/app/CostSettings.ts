@@ -8,6 +8,8 @@ export interface CostSettings {
   monthlyDbIncidents: number;
   avgMttrHours: number;
   engineersPerIncident: number;
+  avgApiPayloadKb: number;
+  costPerMillionApiRequests: number;
 }
 
 export const COST_DEFAULTS: CostSettings = {
@@ -20,6 +22,8 @@ export const COST_DEFAULTS: CostSettings = {
   monthlyDbIncidents: 2,
   avgMttrHours: 4,
   engineersPerIncident: 2,
+  avgApiPayloadKb: 5,
+  costPerMillionApiRequests: 2,
 };
 
 const KEY = "pp-cost-settings";
@@ -40,3 +44,14 @@ export function saveCostSettings(s: CostSettings): void {
     window.dispatchEvent(new CustomEvent(COST_SETTINGS_EVENT));
   } catch {}
 }
+
+export function getAnnualMultiplier(from: string): number {
+  const match = from.match(/now\(\)-(\d+)([hdm])/);
+  if (!match) return 52;
+  const num = parseInt(match[1]);
+  const unit = match[2];
+  const hours = unit === 'h' ? num : unit === 'd' ? num * 24 : num / 60;
+  return Math.ceil(8760 / hours);
+}
+
+export const fmt = (n: number) => `$${Math.round(n).toLocaleString()}`;
