@@ -1,9 +1,9 @@
 {
   "$schema": "./.dt-app/app.config.schema.json",
-  "environmentUrl": "https://guu84124.apps.dynatrace.com",
+  "environmentUrl": "https://rer30726.apps.dynatrace.com",
   "app": {
     "name": "Pattern Problems",
-    "version": "1.2.9",
+    "version": "1.2.10",
     "description": "Identifies N+1, Chatty API, and other anti-pattern problems in services.",
     "id": "my.pattern.problems.app",
     "icon": "./assets/icon.png",
