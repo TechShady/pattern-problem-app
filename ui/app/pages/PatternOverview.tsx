@@ -57,13 +57,21 @@ export function PatternOverview() {
 | filter db.system != "null" and aggregation.count > 1
 | summarize total_aggregation_count = max(aggregation.count)`;
 
-  // Query reduction potential
-  const reductionQuery = `fetch spans, ${tf}
+  // Query reduction potential — always last 7d so the *52 annualisation is correct
+  const reductionQuery = `fetch spans, from: now()-7d, to: now()
 | filter db.system != "null"
+| filterOut contains(db.query.text, "INSERT")
 | summarize c=count(), s= sum(aggregation.count),
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
 | fieldsAdd queryReduction = ((toDouble(s1)-toDouble(c1)) / toDouble(s)) * 100,
-            reducibleQueries = (toDouble(s1)-toDouble(c1))`;
+            reducibleQueries = (toDouble(s1)-toDouble(c1))*52`;
+
+  // Previous 7d window for the reduction tile trend arrow
+  const reductionPrevQuery = `fetch spans, from: now()-14d, to: now()-7d
+| filter db.system != "null"
+| filterOut contains(db.query.text, "INSERT")
+| summarize c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count))
+| fieldsAdd reducible = (toDouble(s1)-toDouble(c1))*52`;
 
   // N+1 services distribution
   const servicesQuery = `fetch spans, ${tf}
@@ -96,14 +104,14 @@ export function PatternOverview() {
             avg_queries_n1 = avg(if(aggregation.count > 1, toDouble(aggregation.count))),
             max_queries_n1 = max(if(aggregation.count > 1, aggregation.count)),
             c1=countif(aggregation.count > 1), s1=sum(if(aggregation.count > 1, aggregation.count)), s=sum(aggregation.count)
-| fieldsAdd reducible = toDouble(s1) - toDouble(c1),
-            reduction_pct = ((toDouble(s1)-toDouble(c1)) / toDouble(s)) * 100` : null;
+| fieldsAdd reduction_pct = ((toDouble(s1)-toDouble(c1)) / toDouble(s)) * 100` : null;
 
   const nPlus1SpansResult = useDql({ query: nPlus1SpansQuery });
   const totalQueriesResult = useDql({ query: totalQueriesQuery });
   const avgQueriesResult = useDql({ query: avgQueriesQuery });
   const maxQueriesResult = useDql({ query: maxQueriesQuery });
   const reductionResult = useDql({ query: reductionQuery });
+  const reductionPrevResult = useDql({ query: reductionPrevQuery });
   const servicesResult = useDql({ query: servicesQuery });
   const databasesResult = useDql({ query: databasesQuery });
   const sparklineResult = useDql({ query: sparklineQuery });
@@ -163,6 +171,11 @@ export function PatternOverview() {
       count: Number(rec.reducibleQueries ?? 0),
     };
   }, [reductionResult.data]);
+
+  const prevReducible = useMemo(() => {
+    const rec = reductionPrevResult.data?.records?.[0] as any;
+    return rec ? Number(rec.reducible ?? 0) : null;
+  }, [reductionPrevResult.data]);
 
   const servicesList = useMemo(() => {
     return (servicesResult.data?.records ?? []).map((r: any) => ({
@@ -313,10 +326,10 @@ export function PatternOverview() {
               color={(reduction?.percentage ?? 0) > 30 ? "#C21930" : "#FF832B"}
             />
             <KpiCard
-              label="Reducible Queries"
+              label="Est. Unnecessary Queries / Year"
               value={reduction?.count.toLocaleString() ?? "—"}
               rawValue={reduction?.count ?? undefined}
-              prevRawValue={prev?.reducible ?? null}
+              prevRawValue={prevReducible}
               sparkline={sparklines.totalQueries.length > 0 ? sparklines.totalQueries.map((v: number, i: number) => v - sparklines.n1Count[i]) : undefined}
               color={(reduction?.count ?? 0) > 1000 ? "#C21930" : "#FF832B"}
             />
