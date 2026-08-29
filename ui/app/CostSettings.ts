@@ -10,6 +10,10 @@ export interface CostSettings {
   engineersPerIncident: number;
   avgApiPayloadKb: number;
   costPerMillionApiRequests: number;
+  devHoursPerN1Fix: number;
+  devHoursPerChattyFix: number;
+  devHoursPerCircularFix: number;
+  devHoursPerSlowFix: number;
 }
 
 export const COST_DEFAULTS: CostSettings = {
@@ -24,6 +28,10 @@ export const COST_DEFAULTS: CostSettings = {
   engineersPerIncident: 2,
   avgApiPayloadKb: 5,
   costPerMillionApiRequests: 2,
+  devHoursPerN1Fix: 8,
+  devHoursPerChattyFix: 16,
+  devHoursPerCircularFix: 24,
+  devHoursPerSlowFix: 12,
 };
 
 const KEY = "pp-cost-settings";

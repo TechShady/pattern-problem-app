@@ -7,6 +7,8 @@ import { NPlus1Trends } from "./pages/NPlus1Trends";
 import { ChattyAPIs } from "./pages/ChattyAPIs";
 import { CircularDependencies } from "./pages/CircularDependencies";
 import { SlowConsumers } from "./pages/SlowConsumers";
+import { ServicePriority } from "./pages/ServicePriority";
+import { ExecutiveSummary } from "./pages/ExecutiveSummary";
 import { TimeframeProvider } from "./TimeframeContext";
 import { DisclaimerModal } from "./components/DisclaimerModal";
 
@@ -34,6 +36,12 @@ export const App = () => {
             </Tab>
             <Tab title="Slow Consumers">
               <SlowConsumers />
+            </Tab>
+            <Tab title="Service Priority">
+              <ServicePriority />
+            </Tab>
+            <Tab title="Executive Summary">
+              <ExecutiveSummary />
             </Tab>
           </Tabs>
         </Page.Main>

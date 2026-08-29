@@ -220,6 +220,40 @@ export function AppHeader({ aiOpen, onAiToggle }: AppHeaderProps) {
             onChange={set("engineersPerIncident")}
             step={1}
           />
+
+          <div className="pp-setting-section">Remediation Effort</div>
+          <SettingRow
+            label="N+1 Query Fix"
+            hint="Average developer hours to identify and fix N+1 query patterns per service"
+            value={draft.devHoursPerN1Fix}
+            onChange={set("devHoursPerN1Fix")}
+            suffix="hrs/service"
+            step={2}
+          />
+          <SettingRow
+            label="Chatty API Fix"
+            hint="Average developer hours to refactor chatty API call patterns per service"
+            value={draft.devHoursPerChattyFix}
+            onChange={set("devHoursPerChattyFix")}
+            suffix="hrs/service"
+            step={4}
+          />
+          <SettingRow
+            label="Circular Dependency Fix"
+            hint="Average developer hours to resolve circular dependencies per service"
+            value={draft.devHoursPerCircularFix}
+            onChange={set("devHoursPerCircularFix")}
+            suffix="hrs/service"
+            step={4}
+          />
+          <SettingRow
+            label="Slow Consumer Fix"
+            hint="Average developer hours to optimize slow consumer patterns per service"
+            value={draft.devHoursPerSlowFix}
+            onChange={set("devHoursPerSlowFix")}
+            suffix="hrs/service"
+            step={2}
+          />
         </div>
       </Sheet>
 
