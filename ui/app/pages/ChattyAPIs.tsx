@@ -48,9 +48,9 @@ export function ChattyAPIs() {
 
   // Chatty APIs: services with high fan-out per trace (many spans in a single trace)
   const chattyQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd caller_service = entityName(dt.entity.service),
-            caller_id = toString(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd caller_service = dt.service.name,
+            caller_id = toString(dt.smartscape.service),
             trace_id = toString(trace.id)
 | summarize call_count = count(),
             distinct_targets = countDistinctExact(span.name),
@@ -61,9 +61,9 @@ export function ChattyAPIs() {
 
   // Service-level chatty summary
   const chattySummaryQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd caller_service = entityName(dt.entity.service),
-            caller_id = toString(dt.entity.service)
+| filter isNotNull(dt.service.name)
+| fieldsAdd caller_service = dt.service.name,
+            caller_id = toString(dt.smartscape.service)
 | summarize total_calls = count(),
             by: { caller_service, caller_id }
 | filter total_calls > 50
@@ -75,8 +75,8 @@ export function ChattyAPIs() {
 
   // Sparkline: chatty patterns over time
   const sparklineQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd caller_service = entityName(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd caller_service = dt.service.name,
             trace_id = toString(trace.id)
 | summarize call_count = count(), by: { caller_service, trace_id, timeframe = bin(end_time, ${binSize}) }
 | filter call_count > 20
@@ -85,8 +85,8 @@ export function ChattyAPIs() {
 
   // Previous period aggregates
   const prevQuery = prevTf ? `fetch spans, ${prevTf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd caller_service = entityName(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd caller_service = dt.service.name,
             trace_id = toString(trace.id)
 | summarize call_count = count(),
             distinct_targets = countDistinctExact(span.name),

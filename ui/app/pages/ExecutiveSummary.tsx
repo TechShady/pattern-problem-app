@@ -155,7 +155,7 @@ export function ExecutiveSummary() {
   const chattyResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service)
+| fieldsAdd svc = dt.service.name
 | summarize calls = count(), by: {svc}
 | filter calls > 50
 | summarize total_chatty_calls = sum(calls), chatty_services = count()`,
@@ -165,7 +165,7 @@ export function ExecutiveSummary() {
   const circularResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service), tid = toString(trace.id)
+| fieldsAdd svc = dt.service.name, tid = toString(trace.id)
 | summarize appearances = count(), by: {tid, svc}
 | filter appearances > 1
 | summarize circular_traces = count(), by: {svc}
@@ -176,7 +176,7 @@ export function ExecutiveSummary() {
   const slowSvcResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service), dur_ms = toDouble(duration) / 1000000.0
+| fieldsAdd svc = dt.service.name, dur_ms = toDouble(duration) / 1000000.0
 | summarize avg_dur = avg(dur_ms), p99_dur = percentile(dur_ms, 99), total_spans = count(), by: {svc}
 | fieldsAdd variance_ratio = p99_dur / avg_dur
 | filter variance_ratio > 5 and total_spans > 10

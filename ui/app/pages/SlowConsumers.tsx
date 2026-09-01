@@ -51,8 +51,8 @@ export function SlowConsumers() {
 
   // Previous period aggregates
   const prevQuery = prevTf ? `fetch spans, ${prevTf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
             duration_ms = toDouble(duration) / 1000000.0
 | summarize avg_duration_ms = avg(duration_ms),
             p99_duration_ms = percentile(duration_ms, 99),
@@ -65,9 +65,9 @@ export function SlowConsumers() {
 
   // Detect slow consumers: spans with disproportionately long duration compared to siblings
   const slowConsumerQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
-            service_id = toString(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
+            service_id = toString(dt.smartscape.service),
             duration_ms = toDouble(duration) / 1000000.0
 | summarize avg_duration_ms = avg(duration_ms),
             p95_duration_ms = percentile(duration_ms, 95),
@@ -82,9 +82,9 @@ export function SlowConsumers() {
 
   // Long-tail spans (individual slow executions)
   const longTailQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
-            service_id = toString(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
+            service_id = toString(dt.smartscape.service),
             duration_ms = toDouble(duration) / 1000000.0
 | filter duration_ms > 5000
 | fields service_name, service_id, span.name, duration_ms, trace.id

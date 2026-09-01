@@ -48,7 +48,7 @@ export function ServicePriority() {
     query: `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
 | filterOut contains(db.query.text, "INSERT")
-| fields svc = entityName(dt.entity.service), agg = toDouble(aggregation.count)
+| fields svc = dt.service.name, agg = toDouble(aggregation.count)
 | summarize n1_queries = sum(agg), n1_spans = count(), by: {svc}
 | fieldsAdd reducible = n1_queries - toDouble(n1_spans)
 | filter reducible > 0
@@ -59,7 +59,7 @@ export function ServicePriority() {
   const chattyResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service)
+| fieldsAdd svc = dt.service.name
 | summarize total_calls = count(), by: {svc}
 | filter total_calls > 50
 | sort total_calls desc
@@ -69,7 +69,7 @@ export function ServicePriority() {
   const circularResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service), tid = toString(trace.id)
+| fieldsAdd svc = dt.service.name, tid = toString(trace.id)
 | summarize appearances = count(), by: {tid, svc}
 | filter appearances > 1
 | summarize circular_traces = count(), by: {svc}
@@ -80,7 +80,7 @@ export function ServicePriority() {
   const slowResult = useDql({
     query: `fetch spans, ${tf}
 | filter isNotNull(dt.entity.service)
-| fieldsAdd svc = entityName(dt.entity.service), dur_ms = toDouble(duration) / 1000000.0
+| fieldsAdd svc = dt.service.name, dur_ms = toDouble(duration) / 1000000.0
 | summarize avg_dur = avg(dur_ms), p99_dur = percentile(dur_ms, 99), total_spans = count(), by: {svc}
 | fieldsAdd variance_ratio = p99_dur / avg_dur
 | filter variance_ratio > 5 and total_spans > 10

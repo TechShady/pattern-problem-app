@@ -30,10 +30,10 @@ export function NPlus1Details() {
          trace.id,
          span.id,
          span.name,
-         \`Service Name\` = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")),
+         \`Service Name\` = coalesce(dt.service.name, "Unknown"),
          \`Endpoint\` = if(isnull(endpoint.name), span.name, else: endpoint.name),
          \`DB\` = db.system,
-         dt.entity.service
+         dt.smartscape.service
 | sort \`N+1 Count\` desc
 | limit 200`;
 
@@ -49,7 +49,7 @@ export function NPlus1Details() {
       db: String(r["DB"] ?? ""),
       traceId: String(r["trace.id"] ?? ""),
       spanId: String(r["span.id"] ?? ""),
-      entityId: String(r["dt.entity.service"] ?? ""),
+      entityId: String(r["dt.smartscape.service"] ?? ""),
     }));
   }, [topSpansResult.data]);
 

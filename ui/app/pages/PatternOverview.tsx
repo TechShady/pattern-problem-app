@@ -85,7 +85,7 @@ export function PatternOverview() {
   // N+1 services distribution
   const servicesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| fields aggregation.count, service_name = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")), service_id = toString(dt.entity.service)
+| fields aggregation.count, service_name = coalesce(dt.service.name, "Unknown"), service_id = toString(dt.smartscape.service)
 | summarize count=sum(aggregation.count), by:{service_name, service_id}
 | sort count desc
 | limit 10`;

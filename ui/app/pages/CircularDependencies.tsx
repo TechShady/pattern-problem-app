@@ -48,9 +48,9 @@ export function CircularDependencies() {
 
   // Detect circular dependencies: traces where a service appears more than once
   const circularQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
-            service_id = toString(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
+            service_id = toString(dt.smartscape.service),
             trace_id_str = toString(trace.id)
 | summarize service_appearances = count(),
             by: { trace_id_str, service_name, service_id }
@@ -64,9 +64,9 @@ export function CircularDependencies() {
 
   // Service call pairs (A->B where B also calls A)
   const callPairsQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd caller = entityName(dt.entity.service),
-            caller_id = toString(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd caller = dt.service.name,
+            caller_id = toString(dt.smartscape.service),
             callee = span.name
 | summarize call_count = count(), by: { caller, caller_id, callee }
 | filter call_count > 3
@@ -78,8 +78,8 @@ export function CircularDependencies() {
 
   // Sparkline: circular trace count over time
   const sparklineQuery = `fetch spans, ${tf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
             trace_id_str = toString(trace.id)
 | summarize service_appearances = count(), by: { trace_id_str, service_name, timeframe = bin(end_time, ${binSize}) }
 | filter service_appearances > 1
@@ -88,8 +88,8 @@ export function CircularDependencies() {
 
   // Previous period aggregates
   const prevQuery = prevTf ? `fetch spans, ${prevTf}
-| filter isNotNull(dt.entity.service)
-| fieldsAdd service_name = entityName(dt.entity.service),
+| filter isNotNull(dt.service.name)
+| fieldsAdd service_name = dt.service.name,
             trace_id_str = toString(trace.id)
 | summarize service_appearances = count(), by: { trace_id_str, service_name }
 | filter service_appearances > 1
