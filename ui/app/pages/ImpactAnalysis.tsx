@@ -45,7 +45,7 @@ export function ImpactAnalysis() {
   // Service-level impact
   const serviceImpactQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| fieldsAdd service_name = entityName(dt.entity.service),
+| fieldsAdd service_name = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")),
             service_id = toString(dt.entity.service),
             duration_ms = toDouble(duration) / 1000000.0
 | summarize n1_count = sum(aggregation.count),

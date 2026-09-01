@@ -36,7 +36,7 @@ export function NPlus1Trends() {
   // Match dashboard query: sort by count desc to get highest-impact spans spread across timeframe
   const scatterQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 10
-| fields end_time, aggregation.count, service_name = entityName(dt.entity.service), db.system
+| fields end_time, aggregation.count, service_name = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")), db.system
 | sort aggregation.count desc
 | limit 5000`;
 

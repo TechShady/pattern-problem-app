@@ -30,7 +30,7 @@ export function NPlus1Details() {
          trace.id,
          span.id,
          span.name,
-         \`Service Name\` = entityName(dt.entity.service),
+         \`Service Name\` = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")),
          \`Endpoint\` = if(isnull(endpoint.name), span.name, else: endpoint.name),
          \`DB\` = db.system,
          dt.entity.service

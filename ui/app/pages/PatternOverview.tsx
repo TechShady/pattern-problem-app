@@ -9,14 +9,13 @@ import { AIInsightsContext, useAIInsights } from "../components/AIInsights";
 import { KpiCard, ForecastProvider } from "../components/KpiCard";
 import { ForecastModal } from "../components/ForecastModal";
 import { useTimeframe, getBinSize } from "../TimeframeContext";
-import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings } from "../CostSettings";
+import { loadCostSettings, COST_SETTINGS_EVENT, CostSettings, fmt } from "../CostSettings";
 import "../PatternProblems.css";
 import type { AIInsightsData } from "../components/AIInsights";
 
 let ENV_URL = "";
 try { ENV_URL = getEnvironmentUrl(); } catch { /* dev fallback */ }
 
-const fmt = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 export function PatternOverview() {
   const { timeframe } = useTimeframe();
@@ -86,7 +85,7 @@ export function PatternOverview() {
   // N+1 services distribution
   const servicesQuery = `fetch spans, ${tf}
 | filter db.system != "null" and aggregation.count > 1
-| fields aggregation.count, service_name = entityName(dt.entity.service), service_id = toString(dt.entity.service)
+| fields aggregation.count, service_name = if(isNotNull(entityName(dt.entity.service)), entityName(dt.entity.service), else: if(isNotNull(service.name), service.name, else: "Unknown")), service_id = toString(dt.entity.service)
 | summarize count=sum(aggregation.count), by:{service_name, service_id}
 | sort count desc
 | limit 10`;
